@@ -19,8 +19,9 @@ module output_manager
 
 contains
 
-   subroutine output_manager_init(field_manager,postfix)
+   subroutine output_manager_init(field_manager,title,postfix)
       type (type_field_manager), target :: field_manager
+      character(len=*),           intent(in) :: title
       character(len=*), optional, intent(in) :: postfix
 
       if (.not.associated(host)) then
@@ -29,7 +30,7 @@ contains
       end if
       nullify(first_file)
       files_initialized = .false.
-      call configure_from_yaml(field_manager,postfix)
+      call configure_from_yaml(field_manager,title,postfix)
    end subroutine
 
    subroutine output_manager_clean()
@@ -50,17 +51,16 @@ contains
 
       output_category => file%first_category
       do while (associated(output_category))
-         write (*,*) 'processing output category '//trim(output_category%name)
+         call host%log_message('Processing output category /'//trim(output_category%name)//':')
          if (.not.output_category%source%has_fields()) call host%fatal_error('collect_from_categories','No variables have been registered under output category "'//trim(output_category%name)//'".')
          list%first_child => null()
          call output_category%source%get_all_fields(list,output_category%output_level)
          field_node => list%first_child
          if (.not.associated(field_node)) call host%log_message('WARNING: output category "'//trim(output_category%name)//'" does not contain any variables with requested output level.')
-         write (*,'(A)',ADVANCE="NO") '  adding: '
          do while (associated(field_node))
             select type (field_node)
             class is (type_field_node)
-               write (*,'(A)',ADVANCE="NO") ' '//trim(field_node%field%name)
+               call host%log_message('  - '//trim(field_node%field%name))
                output_field => file%create_field()
                output_field%time_method = output_category%time_method
                output_field%source => field_node%field
@@ -389,14 +389,14 @@ contains
       end do
    end subroutine output_manager_save
    
-   subroutine configure_from_yaml(field_manager,postfix)
+   subroutine configure_from_yaml(field_manager,title,postfix)
       type (type_field_manager), target      :: field_manager
+      character(len=*),           intent(in) :: title
       character(len=*), optional, intent(in) :: postfix
 
       character(len=yaml_error_length)   :: yaml_error
       class (type_node),         pointer :: node
       type (type_key_value_pair),pointer :: pair
-      character(len=max_path)            :: file_path
       integer,parameter                  :: yaml_unit = 100
       logical                            :: file_exists
 
@@ -422,7 +422,7 @@ contains
                if (pair%key=='') call host%fatal_error('configure_from_yaml','Error parsing output.yaml: empty file path specified.')
                select type (dict=>pair%value)
                   class is (type_dictionary)
-                     call process_file(field_manager,trim(pair%key),dict,postfix=postfix)
+                     call process_file(field_manager,trim(pair%key),dict,title,postfix=postfix)
                   class default
                      call host%fatal_error('configure_from_yaml','Error parsing output.yaml: contents of '//trim(dict%path)//' must be a dictionary, not a single value.')
                end select
@@ -433,10 +433,11 @@ contains
       end select
    end subroutine configure_from_yaml
 
-   subroutine process_file(field_manager,path,mapping,postfix)
+   subroutine process_file(field_manager,path,mapping,title,postfix)
       type (type_field_manager), target      :: field_manager
       character(len=*),           intent(in) :: path
       class (type_dictionary),    intent(in) :: mapping
+      character(len=*),           intent(in) :: title
       character(len=*), optional, intent(in) :: postfix
 
       type (type_error),  pointer :: config_error
@@ -468,7 +469,7 @@ contains
       first_file => file
 
       ! Can be used for CF global attributes
-      file%title = mapping%get_string('title',default='',error=config_error)
+      file%title = mapping%get_string('title',default=title,error=config_error)
       if (associated(config_error)) call host%fatal_error('process_file',config_error%message)
 
       ! Determine time unit
@@ -579,11 +580,11 @@ contains
       integer :: default_time_method
       type (type_key_value_pair),pointer :: pair
 
-      default_time_method = mapping%get_integer('time_method',default=parent_time_method,error=config_error)
+      default_time_method = get_time_method(mapping,parent_time_method,'process_group')
 
       ! Get list with groups [if any]
       list => mapping%get_list('groups',required=.false.,error=config_error)
-      if (associated(config_error)) call host%fatal_error('process_file',config_error%message)
+      if (associated(config_error)) call host%fatal_error('process_group',config_error%message)
       if (associated(list)) then
          item => list%first
          do while (associated(item))
@@ -591,7 +592,7 @@ contains
                class is (type_dictionary)
                   call process_group(file, node, default_time_method)
                class default
-                  call host%fatal_error('process_file','Elements below '//trim(list%path)//' must be dictionaries.')
+                  call host%fatal_error('process_group','Elements below '//trim(list%path)//' must be dictionaries.')
             end select
             item => item%next
          end do
@@ -599,14 +600,14 @@ contains
 
       ! Get list with variables
       list => mapping%get_list('variables',required=.true.,error=config_error)
-      if (associated(config_error)) call host%fatal_error('process_file',config_error%message)
+      if (associated(config_error)) call host%fatal_error('process_group',config_error%message)
       item => list%first
       do while (associated(item))
          select type (node=>item%node)
             class is (type_dictionary)
-               call process_variable(file, node)
+               call process_variable(file, node, default_time_method)
             class default
-               call host%fatal_error('process_file','Elements below '//trim(list%path)//' must be dictionaries.')
+               call host%fatal_error('process_group','Elements below '//trim(list%path)//' must be dictionaries.')
          end select
          item => item%next
       end do
@@ -619,9 +620,10 @@ contains
       end do
    end subroutine process_group
    
-   subroutine process_variable(file,mapping)
+   subroutine process_variable(file,mapping,default_time_method)
       class (type_file),      intent(inout) :: file
       class (type_dictionary),intent(in)    :: mapping
+      integer,                intent(in)    :: default_time_method
 
       character(len=string_length) :: source_name
       type (type_error),        pointer :: config_error
@@ -643,8 +645,7 @@ contains
       end if
 
       ! Time method
-      output_item%time_method = mapping%get_integer('time_method',default=time_method_instantaneous,error=config_error)
-      if (associated(config_error)) call host%fatal_error('process_variable',config_error%message)
+      output_item%time_method = get_time_method(mapping,default_time_method,'process_variable')
 
       select type (output_item)
       class is (type_output_field)
@@ -691,5 +692,33 @@ contains
       end do
 
    end subroutine process_variable
+
+   function get_time_method(mapping,default,caller) result(method)
+      class (type_dictionary),intent(in) :: mapping
+      integer,                intent(in) :: default
+      character(len=*),       intent(in) :: caller
+      integer :: method
+
+      type (type_error),  pointer :: config_error
+      class (type_scalar),pointer :: scalar
+      logical                     :: success
+
+      method = default
+      scalar => mapping%get_scalar('time_method',required=.false.,error=config_error)
+      if (associated(config_error)) call host%fatal_error(caller,config_error%message)
+      if (.not.associated(scalar)) return
+      select case (scalar%string)
+      case ('mean')
+         method = time_method_mean
+      case ('point','instantaneous')
+         method = time_method_instantaneous
+      case ('integrated')
+         method = time_method_integrated
+      case default
+         method = scalar%to_integer(default,success)
+         if (.not.success.or.method<0.or.method>3) call host%fatal_error(caller, trim(scalar%path)//' is set to "' &
+            //trim(scalar%string)//'", which is not a supported value. Supported: point (1), mean (2), integrated (3).')
+      end select
+   end function get_time_method
 
 end module
