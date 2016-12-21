@@ -18,7 +18,7 @@
    use ice_uvic,         only: init_ice_uvic, do_ice_uvic
    use meanflow,         only: h,T,S,rho,rho_0
    use airsea,           only: heat,I_0,albedo,precip,evap,cloud,swr_method,airt, &
-                               airp,rh,u10,v10,back_radiation_method,hum_method, &
+                               airp,hum,u10,v10,back_radiation_method,hum_method, &
                                fluxes_method,tx,ty
 !
    IMPLICIT NONE
@@ -192,7 +192,7 @@
          endif
          n = ubound(S,1)
          call do_ice_winton(julianday,secondsofday,lon,lat, &
-                            cloud,airt,airp,rh,u10,v10, &
+                            cloud,airt,airp,hum,u10,v10, &
                             S(n),rho(n),rho_0,h(n), &
                             back_radiation_method,hum_method, &
                             fluxes_method,dt, &
@@ -206,7 +206,7 @@
          endif
          n = ubound(S,1)
          call do_ice_uvic(dt,h(n),julianday,secondsofday,lon,lat, &
-                          I_0,airt,airp,rh,u10,v10,precip,cloud, &
+                          I_0,airt,airp,hum,u10,v10,precip,cloud, &
                           T(n),S(n),rho(n),rho_0, &
                           back_radiation_method,hum_method,fluxes_method, &
                           ice_uvic_hi,ice_uvic_hs,ice_uvic_t1,ice_uvic_t2,ice_uvic_ts,albedo,heat,ice_uvic_tmelt,ice_uvic_bmelt)

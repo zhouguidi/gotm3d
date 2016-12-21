@@ -42,6 +42,7 @@
       REALTYPE,pointer                   :: data => null() ! Pointer to scalar data (depth-independent variable)
       type (type_0d_variable),pointer    :: next => null() ! Next variable in current input file
       REALTYPE                           :: scale_factor = _ONE_
+      REALTYPE                           :: add_offset = _ZERO_
    end type
 
 !  Information on file with observed profiles
@@ -69,6 +70,7 @@
       integer                             :: jul2  = 0
       integer                             :: secs2 = 0
       integer                             :: unit = -1
+      integer                             :: lines = 0
       type (type_0d_variable),    pointer :: first_variable => null()
       type (type_timeseries_file),pointer :: next => null()
    end type
@@ -215,7 +217,7 @@
 ! !IROUTINE: Register a 0d input variable.
 !
 ! !INTERFACE:
-   subroutine register_input_0d(path,icolumn,data,name,scale_factor)
+   subroutine register_input_0d(path,icolumn,data,name,scale_factor,add_offset)
 !
 ! !DESCRIPTION:
 !
@@ -223,7 +225,7 @@
    character(len=*), intent(in) :: path,name
    integer,          intent(in) :: icolumn
    REALTYPE,target              :: data
-   REALTYPE,optional,intent(in) :: scale_factor
+   REALTYPE,optional,intent(in) :: scale_factor,add_offset
 !
 ! !REVISION HISTORY:
 !  Original author(s): Jorn Bruggeman
@@ -281,6 +283,7 @@
    variable%data => data
    variable%data = _ZERO_
    if (present(scale_factor)) variable%scale_factor = scale_factor
+   if (present(add_offset)) variable%add_offset = add_offset
 
    end subroutine register_input_0d
 !EOC
@@ -575,7 +578,7 @@
 !
 ! !LOCAL VARIABLES:
    integer                      :: rc
-   integer                      :: yy,mm,dd,hh,min,ss
+   integer                      :: yy,mm,dd,hh,mins,ss
    REALTYPE                     :: t,dt
    type (type_0d_variable),pointer :: curvar
 !
@@ -589,9 +592,16 @@
          info%jul1 = info%jul2
          info%secs1 = info%secs2
          info%obs1 = info%obs2
-         call read_obs(info%unit,yy,mm,dd,hh,min,ss,size(info%obs2),info%obs2,rc)
+         call read_obs(info%unit,yy,mm,dd,hh,mins,ss,size(info%obs2),info%obs2,rc,line=info%lines)
+         if (rc>0) then
+            FATAL 'Error reading time series from '//trim(info%path)//' at line ',info%lines
+            stop 'input:get_observed_scalars'
+         elseif (rc<0) then
+            FATAL 'End of file reached while attempting to read new data from '//trim(info%path)//'. Does this file span the entire simulated period?'
+            stop 'input:get_observed_scalars'
+         end if
          call julian_day(yy,mm,dd,info%jul2)
-         info%secs2 = hh*3600 + min*60 + ss
+         info%secs2 = hh*3600 + mins*60 + ss
          if(time_diff(info%jul2,info%secs2,jul,secs)>0) exit
       end do
       dt = time_diff(info%jul2,info%secs2,info%jul1,info%secs1)
@@ -602,7 +612,7 @@
    t  = time_diff(jul,secs,info%jul1,info%secs1)
    curvar => info%first_variable
    do while (associated(curvar))
-      curvar%data = curvar%scale_factor*(info%obs1(curvar%index) + t*info%alpha(curvar%index))
+      curvar%data = curvar%scale_factor*min(max(info%obs1(curvar%index),info%obs2(curvar%index)),max(min(info%obs1(curvar%index),info%obs2(curvar%index)),info%obs1(curvar%index) + t*info%alpha(curvar%index))) + curvar%add_offset
       curvar => curvar%next
    end do
 
@@ -684,7 +694,7 @@
 ! !IROUTINE: read_obs
 !
 ! !INTERFACE:
-   subroutine read_obs(unit,yy,mm,dd,hh,min,ss,N,obs,ierr)
+   subroutine read_obs(unit,yy,mm,dd,hh,min,ss,N,obs,ios,line)
 !
 ! !DESCRIPTION:
 !  This routine will read all non-profile observations.
@@ -694,9 +704,6 @@
 !  in the 'obs' array. It is up to the calling routine to assign
 !  meaning full variables to the individual elements in {\tt obs}.
 !
-! !USES:
-   IMPLICIT NONE
-!
 ! !INPUT PARAMETERS:
    integer, intent(in)                 :: unit
    integer, intent(in)                 :: N
@@ -704,7 +711,8 @@
 ! !OUTPUT PARAMETERS:
    integer, intent(out)                :: yy,mm,dd,hh,min,ss
    REALTYPE,intent(out)                :: obs(:)
-   integer, intent(out)                :: ierr
+   integer, intent(out)                :: ios
+   integer, intent(inout), optional    :: line
 !
 ! !REVISION HISTORY:
 !  Original author(s): Karsten Bolding & Hans Burchard
@@ -712,34 +720,22 @@
 !EOP
 !
 ! !LOCAL VARIABLES:
-   integer                   :: i,ios
-   logical                   :: data_ok
+   integer                   :: i
    character                 :: c1,c2,c3,c4
    character(len=128)        :: cbuf
 !-----------------------------------------------------------------------
 !BOC
-   ios=0
-   data_ok=.false.
-   do while (ios .eq. 0 .and. .not. data_ok)
-      read(unit,'(A128)',iostat=ios,ERR=100,END=110) cbuf
-      if (cbuf(1:1) == '#' .or. cbuf(1:1) == '!' .or. &
-          len(trim(cbuf)) == 0 ) then
-         data_ok=.false.
-      else
-         read(cbuf,900,ERR=100,END=110) yy,c1,mm,c2,dd,hh,c3,min,c4,ss
-         read(cbuf(20:),*,ERR=100,END=110) (obs(i),i=1,N)
-         data_ok=.true.
+   do
+      if (present(line)) line = line + 1
+      read(unit,'(A128)',iostat=ios) cbuf
+      if (ios/=0) return
+      if (cbuf(1:1)/='#' .and. cbuf(1:1)/='!' .and. len_trim(cbuf)/=0) then
+         read(cbuf,'(i4,a1,i2,a1,i2,1x,i2,a1,i2,a1,i2)',iostat=ios) yy,c1,mm,c2,dd,hh,c3,min,c4,ss
+         if (ios==0) read(cbuf(20:),*,iostat=ios) (obs(i),i=1,N)
+         if (ios<0) ios = 1   ! End-of-file (ios<0) means premature end of line, which is a read error (ios>0) to us
+         return
       end if
    end do
-   data_ok=.false.
-
-   ierr=ios
-   return
-100 ierr=READ_ERROR
-   return
-110 ierr=END_OF_FILE
-   return
-900 format(i4,a1,i2,a1,i2,1x,i2,a1,i2,a1,i2)
    end subroutine read_obs
 !EOC
 

@@ -153,6 +153,8 @@
 !  Sea surface elevations - 'zetaspec' namelist
    integer,public            :: zeta_method
    character(LEN=PATH_MAX)   :: zeta_file
+   REALTYPE, public          :: zeta_scale
+   REALTYPE, public          :: zeta_offset
    REALTYPE, public          :: zeta_0
    REALTYPE, public          :: period_1
    REALTYPE, public          :: amp_1
@@ -271,13 +273,13 @@
             const_dsdx,const_dsdy,const_dtdx,const_dtdy,        &
             s_adv,t_adv
 
-   namelist /extinct/ extinct_method,extinct_file
+   namelist /extinct/ extinct_method,extinct_file,A,g1,g2
 
    namelist /w_advspec/                                         &
             w_adv_method,w_adv_file,w_adv_height0,w_adv0,w_adv_discr
 
    namelist /zetaspec/                                          &
-            zeta_method,zeta_file,zeta_0,                       &
+            zeta_method,zeta_file,zeta_scale,zeta_offset,zeta_0,&
             period_1,amp_1,phase_1,period_2,amp_2,phase_2
 
    namelist /wave_nml/                                          &
@@ -366,6 +368,11 @@
 !  Light extinction - the 'extinct' namelist
    extinct_method=1
    extinct_file='extinction.dat'
+   ! extinct_method=7 - user defined
+   ! default values are from Lago Maggiore, Stips
+   A=0.7
+   g1=0.40
+   g2=8.0
 
 !  Vertical advection velocity - 'w_advspec' namelist
    w_adv_method=0
@@ -377,6 +384,8 @@
 !  Sea surface elevations - 'zetaspec' namelist
    zeta_method=0
    zeta_file='zeta.dat'
+   zeta_scale=_ONE_
+   zeta_offset=_ZERO_
    zeta_0=_ZERO_
    period_1=44714.
    amp_1=_ZERO_
@@ -657,7 +666,6 @@
       case (6)
          A=0.78;g1=1.40;g2=7.9
       case (7)
-         A=0.7;g1=0.40;g2=8.0 ! Adolf Stips - Lago Maggiore
       case default
          LEVEL1 'A non-valid extinct_method has been given ',extinct_method
          stop 'init_observations()'
@@ -689,7 +697,7 @@
 !        The analytical prescription of surface elevation is time-dependent
 !        and is therefore handled in get_all_obs.
       case (FROMFILE)
-         call register_input_0d(zeta_file,1,zeta,'observed sea surface elevation')
+         call register_input_0d(zeta_file,1,zeta,'observed sea surface elevation',scale_factor=zeta_scale,add_offset=zeta_offset)
          LEVEL2 'Reading sea surface elevations from:'
          LEVEL3 trim(zeta_file)
       case default

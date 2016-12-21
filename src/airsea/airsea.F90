@@ -49,8 +49,7 @@
    integer,  public                    :: hum_method
    REALTYPE, public, target            :: u10,v10
    REALTYPE, public, target            :: airp,airt
-   REALTYPE, public, target            :: rh
-   REALTYPE, public                    :: twet,tdew
+   REALTYPE, public, target            :: hum
    REALTYPE, public, target            :: cloud
 !
 !  wind speed (m/s)
@@ -133,6 +132,7 @@
    REALTYPE                  :: wind_factor
    REALTYPE                  :: const_swr
    REALTYPE                  :: swr_factor
+   REALTYPE                  :: shf_factor
    REALTYPE                  :: const_heat
    REALTYPE                  :: const_tx,const_ty
    REALTYPE                  :: const_precip
@@ -206,6 +206,7 @@
 !                          & (always positive)                                                      \\
 ! {\tt swr\_file}        & file with short wave radiation in W\,m$^{-2}$                          \\
 ! {\tt swr\_factor}      & scales data read from file to  W\,m$^{-2}$ - defaults to 1             \\
+! {\tt shf\_factor}      & scales surface heat fluxes - defaults to 1                             \\
 ! {\tt const\_heat }     & constant value for surface heat flux in  W\,m$^{-2}$                   \\
 !                          & (negative for heat loss)                                               \\
 ! {\tt heatflux\_file}   & file with date and {\tt heat} in W\,m$^{-2}$                           \\
@@ -252,7 +253,7 @@
                      rain_impact, &
                      calc_evaporation, &
                      swr_method,albedo_method,const_albedo,const_swr,swr_file,swr_factor, &
-                     const_heat, &
+                     shf_factor,const_heat, &
                      heatflux_file, &
                      momentum_method, &
                      const_tx,const_ty, &
@@ -299,10 +300,8 @@
 !  cloud cover
    cloud = _ZERO_
 
-!  relative humidity (various measures)
-   twet = _ZERO_
-   tdew = _ZERO_
-   rh   = _ZERO_
+!  humidity (various options - select through hum_method)
+   hum  = _ZERO_
 
 !  air temperature
    airt = _ZERO_
@@ -354,6 +353,7 @@
    const_swr=_ZERO_
    swr_file = ''
    swr_factor=_ONE_
+   shf_factor=_ONE_
    const_heat = _ZERO_
    heatflux_file = ''
    momentum_method = 0
@@ -406,7 +406,7 @@
       call register_input_0d(meteo_file,2,v10,'wind speed: y-direction',scale_factor=wind_factor)
       call register_input_0d(meteo_file,3,airp,'air pressure',scale_factor=100.d0)
       call register_input_0d(meteo_file,4,airt,'air temperature')
-      call register_input_0d(meteo_file,5,rh,'relative humidity')
+      call register_input_0d(meteo_file,5,hum,'relative humidity')
       call register_input_0d(meteo_file,6,cloud,'cloud cover')
 #endif
       LEVEL2 'Air-sea exchanges will be calculated'
@@ -582,6 +582,9 @@
       I_0 = I_0*(_ONE_-albedo-bio_albedo)
    end if
 
+   if (shf_factor .ne. _ONE_) then
+      heat = shf_factor*heat
+   end if
 
 !  If reading SST from file, overwrite current (model) SST with observed value,
 !  to be used in output.
@@ -669,6 +672,7 @@
    REALTYPE, save            :: alpha(5)
    REALTYPE, save            :: h1,tx1,ty1,cloud1
    REALTYPE, save            :: h2,tx2,ty2,cloud2
+   integer, save             :: line
    integer                   :: rc
 #endif
    REALTYPE                  :: ta_k,tw,tw_k
@@ -683,13 +687,21 @@
       tx2    = _ZERO_
       ty2    = _ZERO_
       cloud2 = _ZERO_
+      line = 0
    end if
 !  This part initialises and reads in new values if necessary.
    if(time_diff(meteo_jul2,meteo_secs2,jul,secs) .lt. 0) then
       do
          meteo_jul1 = meteo_jul2
          meteo_secs1 = meteo_secs2
-         call read_obs(meteo_unit,yy,mm,dd,hh,min,ss,6,obs,rc)
+         call read_obs(meteo_unit,yy,mm,dd,hh,min,ss,6,obs,rc,line=line)
+         if (rc>0) then
+            FATAL 'Error reading time series from '//trim(meteo_file)//' at line ',line
+            stop 'flux_from_meteo'
+         elseif (rc<0) then
+            FATAL 'End of file reached while attempting to read new data from '//trim(meteo_file)//'. Does this file span the entire simulated period?'
+            stop 'flux_from_meteo'
+         end if
          call julian_day(yy,mm,dd,meteo_jul2)
          meteo_secs2 = hh*3600 + min*60 + ss
          if(time_diff(meteo_jul2,meteo_secs2,jul,secs) .gt. 0) EXIT
@@ -698,7 +710,7 @@
       v10   = obs(2)*wind_factor
       airp  = obs(3)*100. !kbk mbar/hPa --> Pa
       airt  = obs(4)
-      rh    = obs(5)
+      hum   = obs(5)
       cloud = obs(6)
 
       if (sst .lt. 100.) then
@@ -722,7 +734,7 @@
       ty1    = ty2
       cloud1 = cloud2
 
-      call humidity(hum_method,rh,airp,tw,ta)
+      call humidity(hum_method,hum,airp,tw,ta)
       call back_radiation(back_radiation_method, &
                           dlat,tw_k,ta_k,cloud,qb)
 
@@ -769,7 +781,7 @@
       ta_k = airt
    end if
 
-   call humidity(hum_method,rh,airp,tw,ta)
+   call humidity(hum_method,hum,airp,tw,ta)
    call back_radiation(back_radiation_method, &
                        dlat,tw_k,ta_k,cloud,qb)
    call airsea_fluxes(fluxes_method, &
@@ -938,11 +950,12 @@
 
    LEVEL2 'u10,v10',u10,v10
    LEVEL2 'airp',airp
-   LEVEL2 'airt,twet,tdew',airt,twet,tdew
-   LEVEL2 'rh',rh
+   LEVEL2 'airt',airt
+   LEVEL2 'hum',hum
 
    LEVEL2 'const_swr',const_swr
    LEVEL2 'swr_factor',swr_factor
+   LEVEL2 'shf_factor',shf_factor
    LEVEL2 'const_heat',const_heat
    LEVEL2 'const_tx,const_ty',const_tx,const_ty
    LEVEL2 'const_precip',const_precip

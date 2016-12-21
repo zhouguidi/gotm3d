@@ -144,8 +144,8 @@
    call fm%register('qh', 'W/m2', 'latent heat', standard_name='', data0d=qh)
    call fm%register('qb', 'W/m2', 'long-wave back radiation', standard_name='', data0d=qb)
    call fm%register('heat', 'W/m2', 'surface heat fluxes', standard_name='', data0d=heat)
-   call fm%register('tx', 'Pa', 'wind stress (x)', standard_name='', data0d=tx)
-   call fm%register('ty', 'Pa', 'wind stress (y)', standard_name='', data0d=ty)
+   call fm%register('tx', 'm2/s2', 'wind stress (x)', standard_name='', data0d=tx)
+   call fm%register('ty', 'm2/s2', 'wind stress (y)', standard_name='', data0d=ty)
    call fm%register('precip', 'm/s', 'precipitation', standard_name='', data0d=precip)
    call fm%register('evap', 'm/s', 'evaporation', standard_name='', data0d=evap)
    call fm%register('sst', 'Celsius', 'sea surface temperature', standard_name='sea_surface_temperature', data0d=sst)
@@ -154,14 +154,13 @@
    call fm%register('cloud', '', 'cloud cover', standard_name='', data0d=cloud)
    select case (hum_method)
       case (1) ! relative humidity in % given
-         call fm%register('hum', '%', 'relative humidity', standard_name='', data0d=rh)
+         call fm%register('hum', '%', 'relative humidity', standard_name='', data0d=hum)
       case (2)  ! Specific humidity from wet bulb temperature
-         call fm%register('hum', 'Celsius', 'wet bulb temperature', standard_name='', data0d=twet)
+         call fm%register('hum', 'Celsius', 'wet bulb temperature', standard_name='', data0d=hum)
       case (3)  ! Specific humidity from dew point temperature
-         call fm%register('hum', 'Celsius', 'dew point temperature', standard_name='', data0d=tdew)
+         call fm%register('hum', 'Celsius', 'dew point temperature', standard_name='', data0d=hum)
       case (4)  ! Specific humidity given
-!KB - check data source
-         call fm%register('hum', 'kg/kg', 'specific humidity', standard_name='', data0d=rh)
+         call fm%register('hum', 'kg/kg', 'specific humidity', standard_name='', data0d=hum)
    end select
    call fm%register('airt', 'Celsius', '2m air temperature', standard_name='', data0d=airt)
    call fm%register('u10', 'm/s', '10m wind (x)', standard_name='', data0d=u10)
