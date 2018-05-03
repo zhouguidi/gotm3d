@@ -173,14 +173,21 @@
 !  The different ice models
    select case (ice_method)
       case (0)
-         LEVEL2 'ice_method=',ice_method
+!         LEVEL2 'ice_method=',ice_method
       case (1)
+#if 1
 !         LEVEL0 T(10),S(10),heat
          n = ubound(S,1)
          tfw = -0.0575*S(n)
          if (heat .gt. _ZERO_ .and. T(n) .le. tfw) then
             heat = _ZERO_
             LEVEL0 'do_ice: heat clipped to',heat
+#else
+!        KK-TODO: in temperature.F90 neg. heat was clipped
+!        simple sea ice model: surface heat flux switched off for sst < freezing temp
+         if (T(n) .le. -0.0575*S(n)) then
+            heat = max(_ZERO_,heat)
+#endif
             ice_layer=_ONE_
          else
             ice_layer=_ZERO_
