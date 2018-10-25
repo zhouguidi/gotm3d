@@ -795,8 +795,9 @@
    call humidity(hum_method,hum,airp,tw,ta)
    call back_radiation(back_radiation_method, &
                        dlat,tw_k,ta_k,cloud,qb)
-   call airsea_fluxes(fluxes_method, &
+   call airsea_fluxes(fluxes_method,rain_impact,calc_evaporation, &
                       tw,ta,u10-ssu,v10-ssv,precip,evap,tx,ty,qe,qh)
+
    heat = (qb+qe+qh)
 #endif
 
