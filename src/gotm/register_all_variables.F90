@@ -59,6 +59,7 @@
    LEVEL1 'register_all_variables()'
    call register_coordinate_variables(lat,lon)
    call register_airsea_variables(nlev)
+   call register_ice_variables()
    call register_observation_variables(nlev)
 #if 0
    call register_stream_variables(nlev)
@@ -163,6 +164,48 @@
    call fm%register('int_total','J/m2', 'integrated total surface heat exchange', standard_name='', data0d=int_total)
    return
    end subroutine register_airsea_variables
+!EOC
+
+!-----------------------------------------------------------------------
+!BOP
+!
+! !ROUTINE: register_ice_variables() - register ice variables.
+!
+! !INTERFACE:
+   subroutine register_ice_variables()
+!
+! !DESCRIPTION:
+!
+! !USES:
+   use ice
+   IMPLICIT NONE
+!
+! !INPUT PARAMETERS:
+!
+! !REVISION HISTORY:
+!  Original author(s): Knut Klingbeil
+!
+! !LOCAL VARIABLES:
+!EOP
+!-----------------------------------------------------------------------
+!BOC
+   LEVEL2 'register_ice_variables()'
+
+   select case (ice_method)
+      case (1)
+         call fm%register('ice_mask' , ''       , 'ice mask'               , standard_name='', data0d=ice_layer, category='ice')
+      case (2)
+         call fm%register('ice_hs'   , 'm'      , 'snow thickness'         , standard_name='', data0d=ice_hs   , category='ice')
+         call fm%register('ice_hi'   , 'm'      , 'ice thickness'          , standard_name='', data0d=ice_hi   , category='ice')
+         call fm%register('ice_ts'   , 'celsius', 'ice surface temperature', standard_name='', data0d=ice_ts   , category='ice', output_level=output_level_debug)
+         call fm%register('ice_T1'   , 'celsius', 'upper ice temperature'  , standard_name='', data0d=ice_T1   , category='ice', output_level=output_level_debug)
+         call fm%register('ice_T2'   , 'celsius', 'lower ice temperature'  , standard_name='', data0d=ice_T2   , category='ice', output_level=output_level_debug)
+         call fm%register('ice_tmelt', 'J/m2'   , 'top melting energy'     , standard_name='', data0d=ice_tmelt, category='ice', output_level=output_level_debug)
+         call fm%register('ice_bmelt', 'J/m2'   , 'bottom melting energy'  , standard_name='', data0d=ice_bmelt, category='ice', output_level=output_level_debug)
+   end select
+
+   return
+   end subroutine register_ice_variables
 !EOC
 
 !-----------------------------------------------------------------------
