@@ -28,6 +28,7 @@
    public                              :: write_time_string
    public                              :: time_diff
    public                              :: sunrise_sunset
+   public                              :: in_time_interval
 #ifdef _PRINTSTATE_
    public                              :: print_state_time
 #endif
@@ -43,6 +44,7 @@
    integer,           public           :: timefmt
    integer,parameter, public           :: timestepkind = selected_int_kind(12)
    integer(kind=timestepkind), public  :: MinN,MaxN
+   integer, public                     :: jul2,secs2
 !
 ! !REVISION HISTORY:
 !  Original author(s): Karsten Bolding & Hans Burchard
@@ -83,7 +85,7 @@
 !EOP
 !
 ! !LOCAL VARIABLES:
-   integer                    :: jul1,secs1,jul2,secs2
+   integer                    :: jul1,secs1
    integer(kind=timestepkind) :: nsecs
    integer                    :: ndays
 !
@@ -453,6 +455,39 @@
    return
    end subroutine  sunrise_sunset
 !EOC
+
+!-----------------------------------------------------------------------
+!BOP
+!
+! !IROUTINE:  in_interval() -
+!
+! !INTERFACE:
+   logical function in_time_interval(j1,s1,j,s,j2,s2)
+!
+! !DESCRIPTION:
+!
+! !USES:
+!
+! !INPUT PARAMETERS:
+   integer, intent(in)                 :: j1,s1,j,s,j2,s2
+!
+! !REVISION HISTORY:
+!  22Nov Author name Initial code
+!
+! !LOCAL VARIABLES:
+   logical         :: before,after
+!EOP
+!-----------------------------------------------------------------------
+!BOC
+
+   before = (j .lt. j1) .or. ( j .eq. j1 .and. (s .lt. s1) )
+   after  = (j .gt. j2) .or. ( j .eq. j2 .and. (s .gt. s2) )
+
+   in_time_interval = ( .not. before ) .and. ( .not. after )
+   return
+   end function in_time_interval
+!EOC
+
 
 #ifdef _PRINTSTATE_
 !-----------------------------------------------------------------------

@@ -86,6 +86,7 @@ module field_manager
       real(rk)                     :: maximum        = default_maximum
       integer                      :: output_level   = output_level_default
       logical                      :: in_output      = .false.
+      logical, pointer             :: used_now       => null()
       integer                      :: status         = status_not_registered
       type (type_dimension_pointer),allocatable :: dimensions(:)
       class (type_attribute), pointer :: first_attribute => null()
@@ -94,6 +95,7 @@ module field_manager
       real(rk),pointer             :: data_1d(:)     => null()
       real(rk),pointer             :: data_2d(:,:)   => null()
       real(rk),pointer             :: data_3d(:,:,:) => null()
+      class (type_category_node),pointer :: category => null()
       type (type_field),pointer    :: next           => null()
    contains
       procedure :: has_dimension         => field_has_dimension
@@ -106,6 +108,7 @@ module field_manager
    end type type_field
 
    type,abstract :: type_node
+      class (type_node),pointer :: parent       => null()
       class (type_node),pointer :: first_child  => null()
       class (type_node),pointer :: next_sibling => null()
    contains
@@ -122,6 +125,7 @@ module field_manager
    contains
       procedure :: get_all_fields
       procedure :: has_fields
+      procedure :: get_path => category_get_path
    end type
 
    integer, parameter :: hash_table_size = 256
@@ -169,6 +173,7 @@ module field_manager
       procedure :: register_dimension
       procedure :: find_dimension
       procedure :: find_category
+      procedure :: get_state
       generic :: send_data => send_data_0d,send_data_1d,send_data_2d,send_data_3d,send_data_by_name_0d,send_data_by_name_1d,send_data_by_name_2d,send_data_by_name_3d
    end type type_field_manager
 
@@ -405,16 +410,22 @@ contains
       type (type_field), target             :: field
 
       type (type_field_set_member),pointer :: member
+      type (type_field_set_member),pointer :: last
 
+      last => null()
       member => self%first
       do while (associated(member))
          if (associated(member%field,field)) return
+         last => member
          member => member%next
       end do
       allocate(member)
       member%field => field
-      member%next => self%first
-      self%first => member
+      if (associated(last)) then
+         last%next => member
+      else
+         self%first => member
+      end if
    end subroutine field_set_add
 
    subroutine field_set_finalize(self)
@@ -494,7 +505,7 @@ contains
       end if
    end function find
 
-   subroutine register(self, name, units, long_name, standard_name, fill_value, minimum, maximum, dimensions, data0d, data1d, data2d, data3d, no_default_dimensions, category, output_level, coordinate_dimension, used, field)
+   subroutine register(self, name, units, long_name, standard_name, fill_value, minimum, maximum, dimensions, data0d, data1d, data2d, data3d, no_default_dimensions, category, output_level, coordinate_dimension, part_of_state, used, used_now, field)
       class (type_field_manager),intent(inout) :: self
       character(len=*),          intent(in)    :: name, units, long_name
       character(len=*),optional, intent(in)    :: standard_name
@@ -505,7 +516,9 @@ contains
       character(len=*),optional, intent(in)    :: category
       integer,         optional, intent(in)    :: output_level
       integer,         optional, intent(in)    :: coordinate_dimension
+      logical,         optional, intent(in)    :: part_of_state
       logical,         optional, intent(out)   :: used
+      logical, target, optional                :: used_now
       type (type_field),optional,pointer       :: field
 
       type (type_field),     pointer :: field_
@@ -585,10 +598,17 @@ contains
       end do
 
       call add_field_to_tree(self,field_,category)
+      if (present(part_of_state)) then
+         if (part_of_state) call add_field_to_tree(self,field_,'state')
+      end if
 
       ! Note: the "in_output" flag can have been set by a call to select_for_output (typically from the output manager),
       ! even before the actual variable is registered with the field_ manager.
       if (present(used)) used = field_%in_output
+      if (present(used_now)) then
+         field_%used_now => used_now
+         used_now = field_%in_output
+      end if
 
       if (present(data0d)) call self%send_data_0d(field_,data0d)
       if (present(data1d)) call self%send_data_1d(field_,data1d)
@@ -712,6 +732,7 @@ contains
 
       ! If field has not been selected for output yet, do so if its output_level does not exceed that the parent category.
       if (.not.field%in_output) field%in_output = field%output_level<=parent%output_level
+      if (.not.associated(field%category)) field%category => parent
 
       ! Create node with field pointer and add to children of parent.
       allocate(type_field_node::node)
@@ -781,8 +802,8 @@ contains
    end function find_category
 
    subroutine add_to_category(parent,node)
-      type (type_category_node), intent(inout) :: parent
-      class (type_node),         target        :: node
+      type (type_category_node), target, intent(inout) :: parent
+      class (type_node),         target                :: node
 
       class (type_node),         pointer       :: previous_sibling
 
@@ -795,6 +816,7 @@ contains
       else
          parent%first_child => node
       end if
+      node%parent => parent
    end subroutine add_to_category
 
    subroutine send_data_by_name_0d(self, name, data)
@@ -946,6 +968,32 @@ contains
       end do
       self%first_child => null()
    end subroutine node_finalize
+
+   function get_state(self) result(field_set)
+      class (type_field_manager),intent(inout) :: self
+      type (type_field_set)                    :: field_set
+
+      class (type_category_node),   pointer :: category
+      category => self%find_category('state')
+      if (associated(category)) call category%get_all_fields(field_set,huge(output_level_debug))
+   end function get_state
+
+   function category_get_path(self) result(path)
+      class (type_category_node), target, intent(in)  :: self
+      character(len=256) :: path
+
+      class (type_node), pointer :: current
+
+      path = trim(self%name)
+      current => self%parent
+      do while (associated(current))
+         select type (current)
+         class is (type_category_node)
+            path = trim(current%name)//'/'//trim(path)
+         end select
+         current => current%parent
+      end do
+   end function category_get_path
 
    integer function hash(str)
       character(len=*), intent(in) :: str
