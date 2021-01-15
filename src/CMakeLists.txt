@@ -79,7 +79,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/gotm gotmlib)
 
 # Build GOTM executable.
 add_executable(gotm_exe
-   ${CMAKE_CURRENT_LIST_DIR}/gotm/main.F90
+   ${CMAKE_CURRENT_LIST_DIR}/gotm3d/main.F90
 )
 set_property(TARGET gotm_exe PROPERTY RUNTIME_OUTPUT_NAME "gotm")
 target_link_libraries(gotm_exe PRIVATE gotm)

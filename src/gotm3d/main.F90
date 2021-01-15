@@ -18,6 +18,7 @@
 ! !USES:
    use time
    use gotm
+   use gotm3d
 !
    IMPLICIT NONE
 !
@@ -31,67 +32,23 @@
    character(LEN=8)          :: systemdate
    character(LEN=10)         :: systemtime
    real                      :: t1=-1,t2=-1
+   character(len=1024), public :: gotm3d_yaml_file = 'gotm3d.yaml'
+
+   integer :: ipnt
 !
 !-----------------------------------------------------------------------
 !BOC
    call cmdline()
 
-!  monitor CPU time and report system time and date
-#ifdef FORTRAN95
-   call CPU_Time(t1)
+   call init_gotm3d()
 
-   call Date_And_Time(DATE=systemdate,TIME=systemtime)
+   DO ipnt = 1, npnt
+     call prepare_1d()
 
-   STDERR LINE
-   STDERR 'GOTM started on ', systemdate(1:4), '/', &
-                              systemdate(5:6), '/', &
-                              systemdate(7:8),      &
-                      ' at ', systemtime(1:2), ':', &
-                              systemtime(3:4), ':', &
-                              systemtime(5:6)
-   STDERR LINE
-#else
-   STDERR LINE
-   STDERR 'GOTM'
-   STDERR LINE
-#endif
+     call gotm1d()
 
-!  run the model
-#if 1
-   call init_gotm()
-#else
-   call init_gotm(t1='1998-02-01 00:00:00',t2='1998-07-01 00:00:00')
-#endif
-   call time_loop()
-   call clean_up()
-
-!  report system date and time at end of run
-#ifdef FORTRAN95
-   call Date_And_Time(DATE=systemdate,TIME=systemtime)
-
-   STDERR LINE
-   STDERR 'GOTM finished on ', systemdate(1:4), '/', &
-                               systemdate(5:6), '/', &
-                               systemdate(7:8),      &
-                       ' at ', systemtime(1:2), ':', &
-                               systemtime(3:4), ':', &
-                               systemtime(5:6)
-   STDERR LINE
-#else
-   STDERR LINE
-   STDERR 'GOTM'
-   STDERR LINE
-#endif
-
-!  report CPU time used for run
-#ifdef FORTRAN95
-   call CPU_Time(t2)
-
-   STDERR 'CPU time:                    ',t2-t1,' seconds'
-   STDERR 'Simulated time/CPU time:     ',simtime/(t2-t1)
-#endif
-
-   call print_version()
+     call collect_result()
+   END DO
 
    contains
 
@@ -172,13 +129,15 @@
          call get_command_argument(i, output_id)
       case ('-l', '--list_variables')
          list_fields = .true.
+      case ('-o', '--log_file')
+         log_file = arg
       case default
          if (arg(1:2) == '--') then
             FATAL 'Command line option '//trim(arg)//' not recognized. Use -h to see supported options'
             stop 2
          end if
-         yaml_file = arg
-         inquire(file=trim(yaml_file),exist=file_exists)
+         gotm3d_yaml_file = arg
+         inquire(file=trim(gotm3d_yaml_file),exist=file_exists)
          if (.not. file_exists) then
             FATAL 'Custom configuration file '//trim(arg)//' does not exist.'
             stop 2
@@ -188,6 +147,65 @@
    end do
 
    end subroutine  cmdline
+
+   subroutine gotm1d()
+  !  monitor CPU time and report system time and date
+#ifdef FORTRAN95
+     call CPU_Time(t1)
+
+     call Date_And_Time(DATE=systemdate,TIME=systemtime)
+
+     STDERR LINE
+     STDERR 'GOTM started on ', systemdate(1:4), '/', &
+                                systemdate(5:6), '/', &
+                                systemdate(7:8),      &
+                        ' at ', systemtime(1:2), ':', &
+                                systemtime(3:4), ':', &
+                                systemtime(5:6)
+     STDERR LINE
+#else
+     STDERR LINE
+     STDERR 'GOTM'
+     STDERR LINE
+#endif
+
+  !  run the model
+#if 1
+     call init_gotm()
+#else
+     call init_gotm(t1='1998-02-01 00:00:00',t2='1998-07-01 00:00:00')
+#endif
+     call time_loop()
+     call clean_up()
+
+  !  report system date and time at end of run
+#ifdef FORTRAN95
+     call Date_And_Time(DATE=systemdate,TIME=systemtime)
+
+     STDERR LINE
+     STDERR 'GOTM finished on ', systemdate(1:4), '/', &
+                                 systemdate(5:6), '/', &
+                                 systemdate(7:8),      &
+                         ' at ', systemtime(1:2), ':', &
+                                 systemtime(3:4), ':', &
+                                 systemtime(5:6)
+     STDERR LINE
+#else
+     STDERR LINE
+     STDERR 'GOTM'
+     STDERR LINE
+#endif
+
+  !  report CPU time used for run
+#ifdef FORTRAN95
+     call CPU_Time(t2)
+
+     STDERR 'CPU time:                    ',t2-t1,' seconds'
+     STDERR 'Simulated time/CPU time:     ',simtime/(t2-t1)
+#endif
+
+     call print_version()
+   end subroutine gotm1d()
 
    subroutine compilation_options()
 #ifdef _FABM_
@@ -206,14 +224,14 @@
    end subroutine compilation_options
 
    subroutine print_help()
-      print '(a)', 'Usage: gotm [OPTIONS]'
+      print '(a)', 'Usage: gotm3d [OPTIONS]'
       print '(a)', ''
       print '(a)', 'Options:'
       print '(a)', ''
       print '(a)', '  -h, --help            print usage information and exit'
       print '(a)', '  -v, --version         print version information'
       print '(a)', '  -c, --compiler        print compilation options'
-      print '(a)', '  <yaml_file>           read configuration from file (default gotm.yaml)'
+      print '(a)', '  <yaml_file>           read configuration from file (default gotm3d.yaml)'
       print '(a)', '  -l, --list_variables  list all variables available for output'
       print '(a)', '  --output_id <string>  append to output file names - before extension'
       print '(a)', '  --read_nml            read configuration from namelist files'
