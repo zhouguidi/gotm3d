@@ -16,9 +16,9 @@
 ! \sect{sec:gotm}.
 !
 ! !USES:
-   use time
-   use gotm
-   use gotm3d
+   use gotm, ONLY: init_gotm, time_loop, clean_up
+   use gotm3d, ONLY: init_gotm3d, time_loop_3d, clean_up_3d, gotm3d_yaml_file
+                     
 !
    IMPLICIT NONE
 !
@@ -32,23 +32,66 @@
    character(LEN=8)          :: systemdate
    character(LEN=10)         :: systemtime
    real                      :: t1=-1,t2=-1
-   character(len=1024), public :: gotm3d_yaml_file = 'gotm3d.yaml'
 
-   integer :: ipnt
+   integer :: n, ipnt, year
 !
 !-----------------------------------------------------------------------
 !BOC
    call cmdline()
 
+  !  monitor CPU time and report system time and date
+#ifdef FORTRAN95
+   call CPU_Time(t1)
+
+   call Date_And_Time(DATE=systemdate,TIME=systemtime)
+
+   STDERR LINE3D
+   STDERR 'GOTM3D started on ', systemdate(1:4), '/', &
+                                systemdate(5:6), '/', &
+                                systemdate(7:8),      &
+                        ' at ', systemtime(1:2), ':', &
+                                systemtime(3:4), ':', &
+                                systemtime(5:6)
+   STDERR LINE3D
+#else
+   STDERR LINE3D
+   STDERR 'GOTM3D'
+   STDERR LINE3D
+#endif
+
    call init_gotm3d()
 
-   DO ipnt = 1, npnt
-     call prepare_1d()
+   call time_loop_3d()
 
-     call gotm1d()
+   call clean_up_3d()
 
-     call collect_result()
-   END DO
+  !  report system date and time at end of run
+#ifdef FORTRAN95
+   call Date_And_Time(DATE=systemdate,TIME=systemtime)
+
+   STDERR LINE3D
+   STDERR 'GOTM3D finished on ', systemdate(1:4), '/', &
+                                 systemdate(5:6), '/', &
+                                 systemdate(7:8),      &
+                         ' at ', systemtime(1:2), ':', &
+                                 systemtime(3:4), ':', &
+                                 systemtime(5:6)
+   STDERR LINE3D
+#else
+   STDERR LINE3D
+   STDERR 'GOTM3D'
+   STDERR LINE3D
+#endif
+
+  !  report CPU time used for run
+#ifdef FORTRAN95
+   call CPU_Time(t2)
+
+   STDERR 'CPU time:                    ',t2-t1,' seconds'
+   STDERR 'Simulated time/CPU time:     ',simtime/(t2-t1)
+#endif
+
+   call print_version_3d()
 
    contains
 
@@ -85,52 +128,6 @@
       case ('-h', '--help')
          call print_help()
          stop
-      case ('--read_nml')
-         read_nml = .true.
-      case ('--write_yaml')
-         i = i+1
-         if (i > n) then
-            FATAL 'Error parsing command line options: --write_yaml must be followed by the path of the file to write.'
-            stop 2
-         end if
-         call get_command_argument(i, write_yaml_path)
-      case ('--detail')
-         i = i+1
-         if (i > n) then
-            FATAL 'Error parsing command line options: --detail must be followed by the detail level (minimal, default, full) to use in written yaml.'
-            stop 2
-         end if
-         call get_command_argument(i, arg)
-         select case (arg)
-         case ('0', 'minimal')
-            write_yaml_detail = 0
-         case ('1', 'default')
-            write_yaml_detail = 1
-         case ('2', 'full')
-            write_yaml_detail = 2
-         case default
-            FATAL 'Value "' // trim(arg) // '" for --detail not recognized.'
-            LEVEL1 'Supported options: minimal (0), default (1), full (2)'
-            stop 2
-         end select
-      case ('--write_schema')
-         i = i+1
-         if (i > n) then
-            FATAL 'Error parsing command line options: --write_schema must be followed by the path of the file to write.'
-            stop 2
-         end if
-         call get_command_argument(i, write_schema_path)
-      case ('--output_id')
-         i = i+1
-         if (i > n) then
-            FATAL 'Error parsing command line options: --output_id must be followed by the postfix that is to be appended to the name of each output file.'
-            stop 2
-         end if
-         call get_command_argument(i, output_id)
-      case ('-l', '--list_variables')
-         list_fields = .true.
-      case ('-o', '--log_file')
-         log_file = arg
       case default
          if (arg(1:2) == '--') then
             FATAL 'Command line option '//trim(arg)//' not recognized. Use -h to see supported options'
@@ -147,65 +144,6 @@
    end do
 
    end subroutine  cmdline
-
-   subroutine gotm1d()
-  !  monitor CPU time and report system time and date
-#ifdef FORTRAN95
-     call CPU_Time(t1)
-
-     call Date_And_Time(DATE=systemdate,TIME=systemtime)
-
-     STDERR LINE
-     STDERR 'GOTM started on ', systemdate(1:4), '/', &
-                                systemdate(5:6), '/', &
-                                systemdate(7:8),      &
-                        ' at ', systemtime(1:2), ':', &
-                                systemtime(3:4), ':', &
-                                systemtime(5:6)
-     STDERR LINE
-#else
-     STDERR LINE
-     STDERR 'GOTM'
-     STDERR LINE
-#endif
-
-  !  run the model
-#if 1
-     call init_gotm()
-#else
-     call init_gotm(t1='1998-02-01 00:00:00',t2='1998-07-01 00:00:00')
-#endif
-     call time_loop()
-     call clean_up()
-
-  !  report system date and time at end of run
-#ifdef FORTRAN95
-     call Date_And_Time(DATE=systemdate,TIME=systemtime)
-
-     STDERR LINE
-     STDERR 'GOTM finished on ', systemdate(1:4), '/', &
-                                 systemdate(5:6), '/', &
-                                 systemdate(7:8),      &
-                         ' at ', systemtime(1:2), ':', &
-                                 systemtime(3:4), ':', &
-                                 systemtime(5:6)
-     STDERR LINE
-#else
-     STDERR LINE
-     STDERR 'GOTM'
-     STDERR LINE
-#endif
-
-  !  report CPU time used for run
-#ifdef FORTRAN95
-     call CPU_Time(t2)
-
-     STDERR 'CPU time:                    ',t2-t1,' seconds'
-     STDERR 'Simulated time/CPU time:     ',simtime/(t2-t1)
-#endif
-
-     call print_version()
-   end subroutine gotm1d()
 
    subroutine compilation_options()
 #ifdef _FABM_
@@ -232,12 +170,6 @@
       print '(a)', '  -v, --version         print version information'
       print '(a)', '  -c, --compiler        print compilation options'
       print '(a)', '  <yaml_file>           read configuration from file (default gotm3d.yaml)'
-      print '(a)', '  -l, --list_variables  list all variables available for output'
-      print '(a)', '  --output_id <string>  append to output file names - before extension'
-      print '(a)', '  --read_nml            read configuration from namelist files'
-      print '(a)', '  --write_yaml <file>   save yaml configuration to file'
-      print '(a)', '  --detail <level>      settings to include in saved yaml file (minimal, default, full)'
-      print '(a)', '  --write_schema <file> save configuration schema in xml format to file'
       print '(a)', ''
    end subroutine print_help
 

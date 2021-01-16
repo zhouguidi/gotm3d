@@ -19,6 +19,7 @@
 #define FATAL  STDERR 'FATAL ERROR: ',
 
 #define LINE "------------------------------------------------------------------------"
+#define LINE3D "========================================================================"
 
 ! Shapes for variables
 #define POINT           0

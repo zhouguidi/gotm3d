@@ -99,7 +99,7 @@
    private
 !
 ! !PUBLIC MEMBER FUNCTIONS:
-   public init_gotm, time_loop, clean_up
+   public gotm1d
 
 !
 ! !DEFINED PARAMETERS:
@@ -144,6 +144,66 @@
 !-----------------------------------------------------------------------
 
    contains
+
+   subroutine gotm1d()
+  !  monitor CPU time and report system time and date
+#ifdef FORTRAN95
+     call CPU_Time(t1)
+
+     call Date_And_Time(DATE=systemdate,TIME=systemtime)
+
+     STDERR LINE
+     STDERR 'GOTM started on ', systemdate(1:4), '/', &
+                                systemdate(5:6), '/', &
+                                systemdate(7:8),      &
+                        ' at ', systemtime(1:2), ':', &
+                                systemtime(3:4), ':', &
+                                systemtime(5:6)
+     STDERR LINE
+#else
+     STDERR LINE
+     STDERR 'GOTM'
+     STDERR LINE
+#endif
+
+  !  run the model
+#if 1
+     call init_gotm()
+#else
+     call init_gotm(t1='1998-02-01 00:00:00',t2='1998-07-01 00:00:00')
+#endif
+     call time_loop()
+     call clean_up()
+
+  !  report system date and time at end of run
+#ifdef FORTRAN95
+     call Date_And_Time(DATE=systemdate,TIME=systemtime)
+
+     STDERR LINE
+     STDERR 'GOTM finished on ', systemdate(1:4), '/', &
+                                 systemdate(5:6), '/', &
+                                 systemdate(7:8),      &
+                         ' at ', systemtime(1:2), ':', &
+                                 systemtime(3:4), ':', &
+                                 systemtime(5:6)
+     STDERR LINE
+#else
+     STDERR LINE
+     STDERR 'GOTM'
+     STDERR LINE
+#endif
+
+  !  report CPU time used for run
+#ifdef FORTRAN95
+     call CPU_Time(t2)
+
+     STDERR 'CPU time:                    ',t2-t1,' seconds'
+     STDERR 'Simulated time/CPU time:     ',simtime/(t2-t1)
+#endif
+
+    call print_version()
+
+   end subroutine gotm1d()
 
 !-----------------------------------------------------------------------
 !BOP
