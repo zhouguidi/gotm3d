@@ -7,3 +7,4 @@ include/version.h
 *.o
 *.so
 *.swp
+*.yaml
