@@ -24,6 +24,7 @@
 ! !PUBLIC MEMBER FUNCTIONS:
    public                              :: init_time, calendar_date
    public                              :: julian_day, update_time
+   public                              :: sec2hms, hms2sec
    public                              :: read_time_string
    public                              :: write_time_string
    public                              :: time_diff
@@ -156,7 +157,7 @@
 ! !IROUTINE:  Convert true Julian day to calendar date
 !
 ! !INTERFACE:
-   subroutine calendar_date(julian,yyyy,mm,dd)
+   elemental subroutine calendar_date(julian,yyyy,mm,dd)
 !
 ! !DESCRIPTION:
 !  Converts a Julian day to a calendar date --- year, month and day.
@@ -166,13 +167,14 @@
    IMPLICIT NONE
 !
 ! !INPUT PARAMETERS:
-   integer                             :: julian
+   integer, intent(in)                 :: julian
 !
 ! !OUTPUT PARAMETERS:
-   integer                             :: yyyy,mm,dd
+   integer, intent(out)                :: yyyy,mm,dd
 !
 ! !REVISION HISTORY:
 !  Original author(s): Karsten Bolding & Hans Burchard
+!  - @2021-02-03: @2021-02-03: changed to elemental by Guidi Zhou
 !
 !EOP
 !
@@ -212,7 +214,7 @@
 ! !IROUTINE:  Convert a calendar date to true Julian day
 !
 ! !INTERFACE:
-   subroutine julian_day(yyyy,mm,dd,julian)
+   elemental subroutine julian_day(yyyy,mm,dd,julian)
 !
 ! !DESCRIPTION:
 !  Converts a calendar date to a Julian day.
@@ -222,10 +224,10 @@
    IMPLICIT NONE
 !
 ! !INPUT PARAMETERS:
-   integer                             :: yyyy,mm,dd
+   integer,intent(in)                  :: yyyy,mm,dd
 !
 ! !OUTPUT PARAMETERS:
-   integer                             :: julian
+   integer,intent(out)                 :: julian
 !
 ! !REVISION HISTORY:
 !  Original author(s): Karsten Bolding & Hans Burchard
@@ -255,6 +257,23 @@
    return
    end subroutine julian_day
 !EOC
+
+  elemental subroutine sec2hms(sec, hh, mm, ss)
+    integer, intent(in) :: sec
+    integer, intent(out) :: hh, mm, ss
+
+    hh   = secs/3600
+    mm  = (secs-hh*3600)/60
+    ss   = secs - 3600*hh - 60*mm
+  end subroutine sec2hms
+
+  elemental function hms2sec(hh,mm,ss) result(sec)
+    integer, intent(in) :: hh, mm, ss
+
+    integer :: sec
+
+    sec = (hh*60+mm)*60+ss
+  end function hms2sec
 
 !-----------------------------------------------------------------------
 !BOP
@@ -373,11 +392,9 @@
 !
 !-----------------------------------------------------------------------
 !BOC
-   hh   = secs/3600
-   min  = (secs-hh*3600)/60
-   ss   = secs - 3600*hh - 60*min
 
    call calendar_date(jul,yy,mm,dd)
+   call sec2hms(secs,hh,min,ss)
 
    write(timestr,'(i4.4,a1,i2.2,a1,i2.2,1x,i2.2,a1,i2.2,a1,i2.2)')  &
                         yy,'-',mm,'-',dd,hh,':',min,':',ss

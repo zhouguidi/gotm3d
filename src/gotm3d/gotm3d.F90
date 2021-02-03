@@ -24,13 +24,22 @@ module gotm3d
   integer, parameter :: per_year = 1
   integer, parameter :: per_month = 2
 
+  integer, parameter :: unit_temp = 101
+  integer, parameter :: unit_salt = 102
+  integer, parameter :: unit_elev = 103
+  integer, parameter :: unit_heat = 104
+  integer, parameter :: unit_mome = 105
+  integer, parameter :: unit_fres = 106
+
   integer :: nlon, nlat, nlev, npnt
   REALTYPE, dimension(:), allocatable :: lon, lat, lev
   integer, dimension(:,:), allocatable :: botlev
   REALTYPE, dimension(:,:), allocatable :: depth
 
   character(len=1024) :: sst_file, sss_file, ssh_file, temp_file, salt_file
+  character(len=1024) :: qnet_file, qsw_file, taux_file, tauy_file, fsw_file
   character(len=100) :: sst_name, sss_name, ssh_name, temp_name, salt_name
+  character(len=100) :: qnet_name, qsw_name, taux_name, tauy_name, fsw_name
 
   character(len=1024), public :: gotm3d_yaml_file = 'gotm3d.yaml'
 
@@ -78,14 +87,29 @@ contains
     ! forcing files
     branch => settings_3d%get_child('surface')
     twig => branch%get_child('sst')
-    call twig%get(sst_file, 'file', 'SST forcing file name (can contain placeholders such as %year% and %month%)', default='sst.nc')
-    call twig%get(sst_name, 'name', 'variable name for SST in the forcing file', default='sst')
+    call twig%get(sst_file, 'file', 'SST file name (can contain placeholders such as %year% and %month%)', units='degC', default='sst.nc')
+    call twig%get(sst_name, 'name', 'variable name for SST in the file', default='sst')
     twig => branch%get_child('ssh')
-    call twig%get(ssh_file, 'file', 'SSH forcing file name (can contain placeholders such as %year% and %month%)', default='ssh.nc')
-    call twig%get(ssh_name, 'name', 'variable name for SSH in the forcing file', default='ssh')
+    call twig%get(ssh_file, 'file', 'SSH file name (can contain placeholders such as %year% and %month%)', units='m', default='ssh.nc')
+    call twig%get(ssh_name, 'name', 'variable name for SSH in the file', default='ssh')
     twig => branch%get_child('sss')
-    call twig%get(sss_file, 'file', 'SSS forcing file name (can contain placeholders such as %year% and %month%)', default='sss.nc')
-    call twig%get(sss_name, 'name', 'variable name for SSS in the forcing file', default='sss')
+    call twig%get(sss_file, 'file', 'SSS file name (can contain placeholders such as %year% and %month%)', units='psu', default='sss.nc')
+    call twig%get(sss_name, 'name', 'variable name for SSS in the file', default='sss')
+    twig => branch%get_child('qnet')
+    call twig%get(qnet_file, 'file', 'net *downward* radiation file name (can contain placeholders such as %year% and %month%)', units='W/m2', default='qnet.nc')
+    call twig%get(qnet_name, 'name', 'variable name for QNET in the file', default='qnet')
+    twig => branch%get_child('qsw')
+    call twig%get(qsw_file, 'file', 'shortwave *downward* radiation file name (can contain placeholders such as %year% and %month%)', units='W/m2', default='qsw.nc')
+    call twig%get(qsw_name, 'name', 'variable name for QSW in the file', default='qsw')
+    twig => branch%get_child('taux')
+    call twig%get(taux_file, 'file', 'momentum flux (wind stress) x-component file name (can contain placeholders such as %year% and %month%)', units='N/m2', default='taux.nc')
+    call twig%get(taux_name, 'name', 'variable name for TAUX in the file', default='taux')
+    twig => branch%get_child('tauy')
+    call twig%get(tauy_file, 'file', 'momentum flux (wind stress) y-component file name (can contain placeholders such as %year% and %month%)', units='N/m2', default='tauy.nc')
+    call twig%get(tauy_name, 'name', 'variable name for TAUY in the file', default='tauy')
+    twig => branch%get_child('fsw')
+    call twig%get(fsw_file, 'file', 'net *downward* freshwater flux file name (can contain placeholders such as %year% and %month%)', units='kg/m2', default='fsw.nc')
+    call twig%get(fsw_name, 'name', 'variable name for FSW in the file', default='fsw')
     branch => settings_3d%get_child('subsurface')
     twig => branch%get_child('temp')
     call twig%get(temp_file, 'file', 'subsurface temperature forcing file name (can contain placeholders such as %year% and %month%)', default='temp.nc')
@@ -236,6 +260,7 @@ contains
     REALTYPE, dimension(:,:,:,:), allocatable :: temp, salt
     REALTYPE, dimension(:,:,:), allocatable :: dsstdx, dsstdy, dsshdx, dsshdy, dsssdx, dsssdy
     REALTYPE, dimension(:,:,:,:), allocatable :: dtempdx, dtempdy, dsaltdx, dsaltdy
+    REALTYPE, dimension(:,:,:), allocatable :: qnet, qsw, taux, tauy, fsw
 
     DO year = year_st, year_ed
       pyear = year - 1
@@ -248,6 +273,11 @@ contains
       allocate(sst(nlon, nlat, 0:ntime+1))
       allocate(ssh(nlon, nlat, 0:ntime+1))
       allocate(sss(nlon, nlat, 0:ntime+1))
+      allocate(qnet(nlon, nlat, 0:ntime+1))
+      allocate(qsw(nlon, nlat, 0:ntime+1))
+      allocate(taux(nlon, nlat, 0:ntime+1))
+      allocate(tauy(nlon, nlat, 0:ntime+1))
+      allocate(fsw(nlon, nlat, 0:ntime+1))
       allocate(temp(nlon, nlat, nlev, 0:ntime+1))
       allocate(salt(nlon, nlat, nlev, 0:ntime+1))
 
@@ -256,6 +286,11 @@ contains
       sst = read_data_year_2d(trim(sst_file), trim(sst_name), year, ntime)
       ssh = read_data_year_2d(trim(ssh_file), trim(ssh_name), year, ntime)
       sss = read_data_year_2d(trim(sss_file), trim(sss_name), year, ntime)
+      qnet = read_data_year_2d(trim(qnet_file), trim(qnet_name), year, ntime)
+      qsw = read_data_year_2d(trim(qsw_file), trim(qsw_name), year, ntime)
+      taux = read_data_year_2d(trim(taux_file), trim(taux_name), year, ntime)
+      tauy = read_data_year_2d(trim(tauy_file), trim(tauy_name), year, ntime)
+      fsw = read_data_year_2d(trim(fsw_file), trim(fsw_name), year, ntime)
       temp = read_data_year_3d(trim(temp_file), trim(temp_name), year, ntime)
       salt = read_data_year_3d(trim(salt_file), trim(salt_name), year, ntime)
 
@@ -283,7 +318,16 @@ contains
         do ilat = 1, nlat
           if (depth(ilon, ilat) /= 0) then
             ipnt = ipnt + 1
-            call prepare_1d_data(nlon,nlat,nlev,ntime,ilon,ilat,ipnt,sst,ssh,sss,temp,salt)
+            call
+            prepare_1d_data(nlev,ntime,ilon,ilat,ipnt,time_jul,time_sec, &
+                            sst(ilon,ilat,:),ssh(ilon,ilat,:),sss(ilon,ilat,:), &
+                            qnet(ilon,ilat,:),qsw(ilon,ilat,:),taux(ilon,ilat,:),tauy(ilon,ilat,:),fsw(ilon,ilat,:),&
+                            temp(ilon,ilat,:,:),salt(ilon,ilat,:,:), &
+                            dsstdx(ilon,ilat,:),dsstdy(ilon,ilat,:), &
+                            dsshdx(ilon,ilat,:),dsshdy(ilon,ilat,:), &
+                            dsssdx(ilon,ilat,:),dsssdy(ilon,ilat,:), &
+                            dtempdx(ilon,ilat,:,:),dtempdy(ilon,ilat,:,:), &
+                            dsaltdx(ilon,ilat,:,:),dsaltdy(ilon,ilat,:,:))
             call prepare_1d_yaml(ipnt)
             call gotm1d()
           endif
@@ -291,23 +335,12 @@ contains
       enddo
       call collect_result()
 
-      deallocate(time_jul)
-      deallocate(time_sec)
-      deallocate(sst)
-      deallocate(ssh)
-      deallocate(sss)
-      deallocate(temp)
-      deallocate(salt)
-      deallocate(dsstdx)
-      deallocate(dsstdy)
-      deallocate(dsshdx)
-      deallocate(dsshdy)
-      deallocate(dsssdx)
-      deallocate(dsssdy)
-      deallocate(dtempdx)
-      deallocate(dtempdy)
-      deallocate(dsaltdx)
-      deallocate(dsaltdy)
+      deallocate(time_jul, timesec)
+      deallocate(sst, ssh, sss)
+      deallocate(qnet, qsw, taux, tauy, fsw)
+      deallocate(temp, salt)
+      deallocate(dsstdx, dsstdy, dsshdx, dsshdy, dsssdx, dsssdy)
+      deallocate(dtempdx, dtempdy, dsaltdx, dsaltdy)
     enddo
   end subroutine time_loop_3d_year
 
@@ -492,8 +525,26 @@ contains
     endif
   end function substitute_file_year
 
-  subroutine prepare_1d()
-  end subroutine prepare_1d
+  subroutine prepare_1d_data(nlev,ntime,ilon,ilat,ipnt,jul,sec,sst,ssh,sss,&
+                             qnet,qsw,taux,tauy,fsw,&
+                             temp,salt,&
+                             dtdx,dtdy,dhdx,dhdy,dsdx,dsdy,&
+                             dttdx,dttdy,dssdx,dssdy)
+    integer, intent(in) :: nlev, ntime, ilon, ilat, ipnt
+    integer, dimension(ntime), intent(in) :: jul, sec
+    REALTYPE, dimension(ntime), intent(in) :: sst,ssh,sss
+    REALTYPE, dimension(ntime), intent(in) :: qnet,qsw,taux,tauy,fsw
+    REALTYPE, dimension(nlev, ntime), intent(in) :: temp,salt,
+    REALTYPE, dimension(ntime), intent(in) :: dtdx,dtdy,dhdx,dhdy,dsdx,dsdy
+    REALTYPE, dimension(nlev, ntime), intent(in) :: dttdx,dttdy,dssdx,dssdy
+
+    integer, dimension(ntime) :: yyyy, mm, dd, hh, min, ss
+    
+    call calendar_date(jul, yyyy, mm, dd)
+    call sec2hms(sec, hh, min, ss)
+
+    call write_surface_data(ntime,sst,dtdx,dtdy)
+  end subroutine prepare_1d_data
 
   subroutine collect_result()
   end subroutine collect_result
