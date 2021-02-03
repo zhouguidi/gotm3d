@@ -4,12 +4,12 @@ module ncutils
 
   implicit none
 
-  public ncread_dimshape, ncread_lonlat, ncread_lonlatlev, ncread_surface, ncread_subsurface
+  public ncread_dimshape, ncread_timelen, ncread_lonlat, ncread_lonlatlev, ncread_surface, ncread_subsurface
 
   contains
-  subroutine ncread_dimshape(fn, , nlat, nlev, ntime)
+  subroutine ncread_dimshape(fn, nlon, nlat, nlev)
     character(len=*), intent(in) :: fn
-    integer, intent(out) :: nlon, nlat, nlev, ntime
+    integer, intent(out) :: nlon, nlat, nlev
 
     integer :: ncid, dimid, ierr
 
@@ -106,6 +106,18 @@ module ncutils
       if (ierr /= NF90_NOERR) call handle_err(ierr)
     endif
 
+  end subroutine ncread_dimshape
+
+  function ncread_timelen(fn) result(ntime)
+    character(len=*), intent(in) :: fn
+
+    integer :: ntime
+
+    integer :: ncid, dimid, ierr
+
+    ierr = nf90_open(trim(fn),NF90_NOWRITE,ncid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
     ierr = nf90_inq_dimid(ncid, 'time', dimid)
     if (ierr /= NF90_NOERR) then
       ntime = -1
@@ -116,7 +128,7 @@ module ncutils
 
     ierr = nf90_close(ncid)
     if (ierr /= NF90_NOERR) call handle_err(ierr)
-  end subroutine ncread_dimshape
+  end function ncread_timelen
 
   subroutine ncread_lonlat(fn, nlon, lon, nlat, lat)
     character(len=*), intent(in) :: fn
