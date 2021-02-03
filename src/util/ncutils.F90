@@ -241,15 +241,90 @@ module ncutils
     endif
   end subroutine ncread_lonlatlev
 
+  subroutine ncread_time(fn, ntime_tot, ntime, jul, sec, loc)
+    character(len=*), intent(in) :: fn
+    integer, intent(in) :: ntime_tot, ntime
+    integer, dimension(ntime), intent(out) :: jul, sec
+    character(len=*), optional, intent(in) :: loc
+
+    integer :: ncid, varid, ierr
+    logical :: last
+    REALTYPE, dimension(ntime) :: data
+    character(len=1024) :: units
+
+    ierr = nf90_open(trim(fn),NF90_NOWRITE,ncid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    ierr = nf90_inq_varid(ncid, "time", varid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    last = present(loc) .and. loc == "last"
+    if (last) then
+      ierr = nf90_get_var(ncid, varid, data, start=(/ntime_tot-ntime+1/), count=(/ntime/))
+    else
+      ierr = nf90_get_var(ncid, varid, data, start=(/1/), count=(/ntime/))
+    endif
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    ierr = nf90_get_att(ncid, varid, "units", units)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    call ncdate_to_julday(ntime, trim(units), data, jul, sec)
+  end subroutine ncread_time
+
+  subroutine ncdate_to_julday(ntime, units, ncdate, jul, sec)
+    integer, intent(in) :: ntime
+    character(len=*), intent(in) :: units
+    REALTYPE, dimension(ntime), intent(in) :: ncdate
+    integer, dimension(ntime), intent(out) :: jul, sec
+
+    character(len=1024) :: time_unit, time_dir, time_ref
+    integer :: loc, ref_jul, ref_sec, conv_unit, conv_jul, conv_sec
+
+    read(units, *)time_unit, time_dir
+    loc = len_trim(time_unit) + len_trim(time_dir) + 3
+    time_ref = units(loc:)
+    call read_time_string(time_ref, ref_jul, ref_sec)
+
+    select case (trim(time_unit))
+    case ("days")
+      conv_unit = 1
+    case ("hours")
+      conv_unit = 24
+    case ("minutes")
+      conv_unit = 1440
+    case ("seconds")
+      conv_unit = 86400
+    case default
+    endselect
+    conv_jul = ncdate / conv_unit
+    conv_sec = (ncdate / conv_unit - conv_jul) * 86400
+
+    select case (trim(time_dir))
+    case ("since")
+      jul = conv_jul + ref_jul
+      sec = conv_sec + ref_sec
+    case ("before")
+      jul = conv_jul - ref_jul
+      sec = conv_sec - ref_sec
+    endselect
+
+    if (sec >= 86400) then
+      jul = jul + 1
+      sec = sec - 86400
+    endif
+  end subroutine ncdate_to_julday
+
   function ncread_surface(fn, varn, nlon, nlat, ntime_tot, ntime, loc) result(data)
     character(len=*), intent(in) :: fn
     character(len=*), intent(in) :: varn
     integer, intent(in) :: nlon, nlat, ntime_tot, ntime
-    character(len=*), intent(in) :: loc
+    character(len=*), optional, intent(in) :: loc
 
     REALTYPE, dimension(nlon, nlat, ntime) :: data
 
     integer :: ncid, varid, ierr
+    logical :: last
 
     ierr = nf90_open(trim(fn),NF90_NOWRITE,ncid)
     if (ierr /= NF90_NOERR) call handle_err(ierr)
@@ -257,10 +332,11 @@ module ncutils
     ierr = nf90_inq_varid(ncid, trim(varn), varid)
     if (ierr /= NF90_NOERR) call handle_err(ierr)
 
-    if (loc == "first" ) then
-      ierr = nf90_get_var(ncid, varid, data, start=(/1,1,1/), count=(/nlon,nlat,ntime/))
-    elseif (loc == "last" ) then
+    last = present(loc) .and. loc == "last"
+    if (last) then
       ierr = nf90_get_var(ncid, varid, data, start=(/1,1,ntime_tot-ntime+1/), count=(/nlon,nlat,ntime/))
+    else
+      ierr = nf90_get_var(ncid, varid, data, start=(/1,1,1/), count=(/nlon,nlat,ntime/))
     endif
     if (ierr /= NF90_NOERR) call handle_err(ierr)
   end function ncread_surface
@@ -269,11 +345,12 @@ module ncutils
     character(len=*), intent(in) :: fn
     character(len=*), intent(in) :: varn
     integer, intent(in) :: nlon, nlat, nlev, ntime_tot, ntime
-    character(len=*), intent(in) :: loc
+    character(len=*), optional, intent(in) :: loc
 
     REALTYPE, dimension(nlon, nlat, nlev, ntime) :: data
 
     integer :: ncid, varid, ierr
+    logical :: last
 
     ierr = nf90_open(trim(fn),NF90_NOWRITE,ncid)
     if (ierr /= NF90_NOERR) call handle_err(ierr)
@@ -281,10 +358,11 @@ module ncutils
     ierr = nf90_inq_varid(ncid, trim(varn), varid)
     if (ierr /= NF90_NOERR) call handle_err(ierr)
 
-    if (loc == "first" ) then
-      ierr = nf90_get_var(ncid, varid, data, start=(/1,1,1,1/), count=(/nlon,nlat,nlev,ntime/))
-    elseif (loc == "last" ) then
+    last = present(loc) .and. loc == "last"
+    if (last) then
       ierr = nf90_get_var(ncid, varid, data, start=(/1,1,1,ntime_tot-ntime+1/), count=(/nlon,nlat,nlev,ntime/))
+    else
+      ierr = nf90_get_var(ncid, varid, data, start=(/1,1,1,1/), count=(/nlon,nlat,nlev,ntime/))
     endif
     if (ierr /= NF90_NOERR) call handle_err(ierr)
   end function ncread_subsurface

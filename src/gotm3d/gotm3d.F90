@@ -11,7 +11,7 @@ module gotm3d
 
   type(type_gotm_settings) :: settings_3d
 
-  character(len=19)  :: start, stop
+  character(len=19)  :: dt_start, dt_stop
   integer            :: jul_st, sec_st, jul_ed, sec_ed
   integer            :: year_st, month_st, day_st
   integer            :: year_ed, month_ed, day_ed
@@ -63,14 +63,14 @@ contains
 
     ! time handling
     branch => settings_3d%get_child('time')
-    call branch%get(start, 'start', 'start date and time', units='yyyy-mm-dd HH:MM:SS', &
+    call branch%get(dt_start, 'start', 'start date and time', units='yyyy-mm-dd HH:MM:SS', &
                     default='2017-01-01 00:00:00')
-    call branch%get(stop, 'stop', 'stop date and time', units='yyyy-mm-dd HH:MM:SS', &
+    call branch%get(dt_stop, 'stop', 'stop date and time', units='yyyy-mm-dd HH:MM:SS', &
                     default='2017-12-31 00:00:00')
     call branch%get(dt, 'dt', 'time step for integration', 's', &
                     minimum=0_timestepkind, default=3600_timestepkind)
-    call read_time_string(start,jul_st,sec_st)
-    call read_time_string(stop,jul_ed,sec_ed)
+    call read_time_string(dt_start,jul_st,sec_st)
+    call read_time_string(dt_stop,jul_ed,sec_ed)
 
     call calendar_date(jul_st, year_st, month_st, day_st)
     call calendar_date(jul_ed, year_ed, month_ed, day_ed)
@@ -231,6 +231,7 @@ contains
     logical :: restart
     character(len=1024) :: fn
     integer :: ntime
+    integer, dimension(:), allocatable :: time_jul, time_sec
     REALTYPE, dimension(:,:,:), allocatable :: sst, ssh, sss
     REALTYPE, dimension(:,:,:,:), allocatable :: temp, salt
     REALTYPE, dimension(:,:,:), allocatable :: dsstdx, dsstdy, dsshdx, dsshdy, dsssdx, dsssdy
@@ -242,11 +243,15 @@ contains
 
       fn = substitute_file_year(trim(sst_file), year)
       ntime = ncread_timelen(trim(fn))
+      allocate(time_jul(0:ntime+1))
+      allocate(time_sec(0:ntime+1))
       allocate(sst(nlon, nlat, 0:ntime+1))
       allocate(ssh(nlon, nlat, 0:ntime+1))
       allocate(sss(nlon, nlat, 0:ntime+1))
       allocate(temp(nlon, nlat, nlev, 0:ntime+1))
       allocate(salt(nlon, nlat, nlev, 0:ntime+1))
+
+      call read_time_year_2d(trim(sst_file), year, ntime, time_jul, time_sec)
 
       sst = read_data_year_2d(trim(sst_file), trim(sst_name), year, ntime)
       ssh = read_data_year_2d(trim(ssh_file), trim(ssh_name), year, ntime)
@@ -278,7 +283,7 @@ contains
         do ilat = 1, nlat
           if (depth(ilon, ilat) /= 0) then
             ipnt = ipnt + 1
-            call prepare_1d_data(ipnt)
+            call prepare_1d_data(nlon,nlat,nlev,ntime,ilon,ilat,ipnt,sst,ssh,sss,temp,salt)
             call prepare_1d_yaml(ipnt)
             call gotm1d()
           endif
@@ -286,6 +291,8 @@ contains
       enddo
       call collect_result()
 
+      deallocate(time_jul)
+      deallocate(time_sec)
       deallocate(sst)
       deallocate(ssh)
       deallocate(sss)
@@ -406,7 +413,26 @@ contains
     enddo
   end subroutine gradient_3d
 
-  function read_var_year_2d(fn, varn, year, ntime) result(data)
+  subroutine read_time_year_2d(fn, year, ntime, jul, sec)
+    character(len=*), intent(in) :: fn
+    integer, intent(in) :: year, ntime
+    integer, dimension(0:ntime+1), intent(out) :: jul
+    REALTYPE, dimension(0:ntime+1), intent(out) :: sec
+
+    character(len=1024) :: fn1
+    integer :: ntime_p, ntime_n
+
+    fn1 = substitute_file_year(trim(fn), year)
+    call ncread_time(trim(fn1), ntime, ntime, jul(1:ntime), sec(1:ntime))
+    fn1 = substitute_file_year(trim(fn), year-1)
+    ntime_p = ncread_timelen(trim(fn1))
+    call ncread_time(trim(fn1), ntime_p, 1, jul(0), sec(0), "last")
+    fn1 = substitute_file_year(trim(fn), year+1)
+    ntime_n = ncread_timelen(trim(fn1))
+    call ncread_time(trim(fn1), ntime_n, 1, jul(ntime+1), sec(ntime+1))
+  end function read_time_year_2d
+
+  function read_data_year_2d(fn, varn, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
     integer, intent(in) :: year, ntime
     REALTYPE, dimension(nlon, nlat, 0:ntime+1) :: data
@@ -422,9 +448,9 @@ contains
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
     data(:, ntime+1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_n, 1)
-  end function read_var_year_2d
+  end function read_data_year_2d
 
-  function read_var_year_3d(fn, varn, year, ntime) result(data)
+  function read_data_year_3d(fn, varn, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
     integer, intent(in) :: year, ntime
     REALTYPE, dimension(nlon, nlat, nlev, 0:ntime+1) :: data
@@ -440,7 +466,7 @@ contains
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
     data(:, :, ntime+1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_n, 1)
-  end function read_var_year_3d
+  end function read_data_year_3d
 
   function substitute_file_year(file, year) result(newfile)
     character(len=*), intent(in) :: file
