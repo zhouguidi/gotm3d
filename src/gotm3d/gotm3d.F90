@@ -256,9 +256,9 @@ contains
     character(len=1024) :: fn
     integer :: ntime
     integer, dimension(:), allocatable :: time_jul, time_sec
-    REALTYPE, dimension(:,:,:), allocatable :: sst, ssh, sss
+    REALTYPE, dimension(:,:,:), allocatable :: ssh
     REALTYPE, dimension(:,:,:,:), allocatable :: temp, salt
-    REALTYPE, dimension(:,:,:), allocatable :: dsstdx, dsstdy, dsshdx, dsshdy, dsssdx, dsssdy
+    REALTYPE, dimension(:,:,:), allocatable :: dsshdx, dsshdy
     REALTYPE, dimension(:,:,:,:), allocatable :: dtempdx, dtempdy, dsaltdx, dsaltdy
     REALTYPE, dimension(:,:,:), allocatable :: qnet, qsw, taux, tauy, fsw
 
@@ -268,48 +268,40 @@ contains
 
       fn = substitute_file_year(trim(sst_file), year)
       ntime = ncread_timelen(trim(fn))
-      allocate(time_jul(0:ntime+1))
-      allocate(time_sec(0:ntime+1))
-      allocate(sst(nlon, nlat, 0:ntime+1))
-      allocate(ssh(nlon, nlat, 0:ntime+1))
-      allocate(sss(nlon, nlat, 0:ntime+1))
-      allocate(qnet(nlon, nlat, 0:ntime+1))
-      allocate(qsw(nlon, nlat, 0:ntime+1))
-      allocate(taux(nlon, nlat, 0:ntime+1))
-      allocate(tauy(nlon, nlat, 0:ntime+1))
-      allocate(fsw(nlon, nlat, 0:ntime+1))
-      allocate(temp(nlon, nlat, nlev, 0:ntime+1))
-      allocate(salt(nlon, nlat, nlev, 0:ntime+1))
+      allocate(time_jul(ntime+2))
+      allocate(time_sec(ntime+2))
+      allocate(ssh(nlon, nlat, ntime+2))
+      allocate(qnet(nlon, nlat, ntime+2))
+      allocate(qsw(nlon, nlat, ntime+2))
+      allocate(taux(nlon, nlat, ntime+2))
+      allocate(tauy(nlon, nlat, ntime+2))
+      allocate(fsw(nlon, nlat, ntime+2))
+      allocate(temp(nlon, nlat, nlev+1, ntime+2))
+      allocate(salt(nlon, nlat, nlev+1, ntime+2))
 
       call read_time_year_2d(trim(sst_file), year, ntime, time_jul, time_sec)
 
-      sst = read_data_year_2d(trim(sst_file), trim(sst_name), year, ntime)
       ssh = read_data_year_2d(trim(ssh_file), trim(ssh_name), year, ntime)
-      sss = read_data_year_2d(trim(sss_file), trim(sss_name), year, ntime)
       qnet = read_data_year_2d(trim(qnet_file), trim(qnet_name), year, ntime)
       qsw = read_data_year_2d(trim(qsw_file), trim(qsw_name), year, ntime)
       taux = read_data_year_2d(trim(taux_file), trim(taux_name), year, ntime)
       tauy = read_data_year_2d(trim(tauy_file), trim(tauy_name), year, ntime)
       fsw = read_data_year_2d(trim(fsw_file), trim(fsw_name), year, ntime)
-      temp = read_data_year_3d(trim(temp_file), trim(temp_name), year, ntime)
-      salt = read_data_year_3d(trim(salt_file), trim(salt_name), year, ntime)
+      temp(:,:,1,:) = read_data_year_2d(trim(sst_file), trim(sst_name), year, ntime)
+      temp(:,:,2:,:) = read_data_year_3d(trim(temp_file), trim(temp_name), year, ntime)
+      salt(:,:,1,:) = read_data_year_2d(trim(sss_file), trim(sss_name), year, ntime)
+      salt(:,:,2:,:) = read_data_year_3d(trim(salt_file), trim(salt_name), year, ntime)
 
-      allocate(dsstdx(nlon, nlat, 0:ntime+1))
-      allocate(dsstdy(nlon, nlat, 0:ntime+1))
-      allocate(dsshdx(nlon, nlat, 0:ntime+1))
-      allocate(dsshdy(nlon, nlat, 0:ntime+1))
-      allocate(dsssdx(nlon, nlat, 0:ntime+1))
-      allocate(dsssdy(nlon, nlat, 0:ntime+1))
-      allocate(dtempdx(nlon, nlat, nlev, 0:ntime+1))
-      allocate(dtempdy(nlon, nlat, nlev, 0:ntime+1))
-      allocate(dsaltdx(nlon, nlat, nlev, 0:ntime+1))
-      allocate(dsaltdy(nlon, nlat, nlev, 0:ntime+1))
+      allocate(dsshdx(nlon, nlat, ntime+2))
+      allocate(dsshdy(nlon, nlat, ntime+2))
+      allocate(dtempdx(nlon, nlat, nlev+1, ntime+2))
+      allocate(dtempdy(nlon, nlat, nlev+1, ntime+2))
+      allocate(dsaltdx(nlon, nlat, nlev+1, ntime+2))
+      allocate(dsaltdy(nlon, nlat, nlev+1, ntime+2))
 
-      call gradient_2d(nlon, nlat, ntime+2, lon, lat, sst, dsstdx, dsstdy)
       call gradient_2d(nlon, nlat, ntime+2, lon, lat, ssh, dsshdx, dsshdy)
-      call gradient_2d(nlon, nlat, ntime+2, lon, lat, sss, dsssdx, dsssdy)
-      call gradient_3d(nlon, nlat, nlev, ntime+2, lon, lat, temp, dtempdx, dtempdy)
-      call gradient_3d(nlon, nlat, nlev, ntime+2, lon, lat, salt, dsaltdx, dsaltdy)
+      call gradient_3d(nlon, nlat, nlev+1, ntime+2, lon, lat, temp, dtempdx, dtempdy)
+      call gradient_3d(nlon, nlat, nlev+1, ntime+2, lon, lat, salt, dsaltdx, dsaltdy)
 
       restart = year /= year_st
 
@@ -318,16 +310,12 @@ contains
         do ilat = 1, nlat
           if (depth(ilon, ilat) /= 0) then
             ipnt = ipnt + 1
-            call
-            prepare_1d_data(nlev,ntime,ilon,ilat,ipnt,time_jul,time_sec, &
-                            sst(ilon,ilat,:),ssh(ilon,ilat,:),sss(ilon,ilat,:), &
-                            qnet(ilon,ilat,:),qsw(ilon,ilat,:),taux(ilon,ilat,:),tauy(ilon,ilat,:),fsw(ilon,ilat,:),&
-                            temp(ilon,ilat,:,:),salt(ilon,ilat,:,:), &
-                            dsstdx(ilon,ilat,:),dsstdy(ilon,ilat,:), &
-                            dsshdx(ilon,ilat,:),dsshdy(ilon,ilat,:), &
-                            dsssdx(ilon,ilat,:),dsssdy(ilon,ilat,:), &
-                            dtempdx(ilon,ilat,:,:),dtempdy(ilon,ilat,:,:), &
-                            dsaltdx(ilon,ilat,:,:),dsaltdy(ilon,ilat,:,:))
+            call prepare_1d_data(nlev+1,ntime,time_jul,time_sec,(/0.0,lev/),ssh(ilon,ilat,:),&
+                                 qnet(ilon,ilat,:),qsw(ilon,ilat,:),taux(ilon,ilat,:),tauy(ilon,ilat,:),fsw(ilon,ilat,:),&
+                                 temp(ilon,ilat,:,:),salt(ilon,ilat,:,:), &
+                                 dsshdx(ilon,ilat,:),dsshdy(ilon,ilat,:), &
+                                 dtempdx(ilon,ilat,:,:),dtempdy(ilon,ilat,:,:), &
+                                 dsaltdx(ilon,ilat,:,:),dsaltdy(ilon,ilat,:,:))
             call prepare_1d_yaml(ipnt)
             call gotm1d()
           endif
@@ -449,56 +437,56 @@ contains
   subroutine read_time_year_2d(fn, year, ntime, jul, sec)
     character(len=*), intent(in) :: fn
     integer, intent(in) :: year, ntime
-    integer, dimension(0:ntime+1), intent(out) :: jul
-    REALTYPE, dimension(0:ntime+1), intent(out) :: sec
+    integer, dimension(ntime+2), intent(out) :: jul
+    REALTYPE, dimension(ntime+2), intent(out) :: sec
 
     character(len=1024) :: fn1
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    call ncread_time(trim(fn1), ntime, ntime, jul(1:ntime), sec(1:ntime))
+    call ncread_time(trim(fn1), ntime, ntime, jul(2:ntime+1), sec(2:ntime+1))
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    call ncread_time(trim(fn1), ntime_p, 1, jul(0), sec(0), "last")
+    call ncread_time(trim(fn1), ntime_p, 1, jul(1), sec(1), "last")
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    call ncread_time(trim(fn1), ntime_n, 1, jul(ntime+1), sec(ntime+1))
+    call ncread_time(trim(fn1), ntime_n, 1, jul(ntime+2), sec(ntime+2))
   end function read_time_year_2d
 
   function read_data_year_2d(fn, varn, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
     integer, intent(in) :: year, ntime
-    REALTYPE, dimension(nlon, nlat, 0:ntime+1) :: data
+    REALTYPE, dimension(nlon, nlat, ntime+2) :: data
 
     character(len=1024) :: fn1
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    data(:, 1:ntime) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime, ntime)
+    data(:, 2:ntime+1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime, ntime)
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    data(:, 0) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_p, 1, "last")
+    data(:, 1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_p, 1, "last")
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    data(:, ntime+1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_n, 1)
+    data(:, ntime+2) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_n, 1)
   end function read_data_year_2d
 
   function read_data_year_3d(fn, varn, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
     integer, intent(in) :: year, ntime
-    REALTYPE, dimension(nlon, nlat, nlev, 0:ntime+1) :: data
+    REALTYPE, dimension(nlon, nlat, nlev, ntime+2) :: data
 
     character(len=1024) :: fn1
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    data(:, :, 1:ntime) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime, ntime)
+    data(:, :, 2:ntime+1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime, ntime)
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    data(:, :, 0) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_p, 1, 'last')
+    data(:, :, 1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_p, 1, 'last')
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    data(:, :, ntime+1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_n, 1)
+    data(:, :, ntime+2) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_n, 1)
   end function read_data_year_3d
 
   function substitute_file_year(file, year) result(newfile)
@@ -525,26 +513,114 @@ contains
     endif
   end function substitute_file_year
 
-  subroutine prepare_1d_data(nlev,ntime,ilon,ilat,ipnt,jul,sec,sst,ssh,sss,&
+  subroutine prepare_1d_data(nlev,ntime,jul,sec,lev,ssh,&
                              qnet,qsw,taux,tauy,fsw,&
                              temp,salt,&
-                             dtdx,dtdy,dhdx,dhdy,dsdx,dsdy,&
-                             dttdx,dttdy,dssdx,dssdy)
-    integer, intent(in) :: nlev, ntime, ilon, ilat, ipnt
+                             dhdx,dhdy,&
+                             dtdx,dtdy,&
+                             dsdx,dsdy)
+    integer, intent(in) :: nlev, ntime
     integer, dimension(ntime), intent(in) :: jul, sec
-    REALTYPE, dimension(ntime), intent(in) :: sst,ssh,sss
+    REALTYPE, dimension(nlev), intent(in) :: lev
+    REALTYPE, dimension(ntime), intent(in) :: ssh
     REALTYPE, dimension(ntime), intent(in) :: qnet,qsw,taux,tauy,fsw
     REALTYPE, dimension(nlev, ntime), intent(in) :: temp,salt,
-    REALTYPE, dimension(ntime), intent(in) :: dtdx,dtdy,dhdx,dhdy,dsdx,dsdy
-    REALTYPE, dimension(nlev, ntime), intent(in) :: dttdx,dttdy,dssdx,dssdy
+    REALTYPE, dimension(ntime), intent(in) :: dhdx,dhdy
+    REALTYPE, dimension(nlev, ntime), intent(in) :: dtdx,dtdy,dsdx,dsdy
 
     integer, dimension(ntime) :: yyyy, mm, dd, hh, min, ss
+    character(len=*), parameter :: fmt_short = 'F7.4', fmt_mid = 'F10.4', fmt_long = 'ES14.6'
     
     call calendar_date(jul, yyyy, mm, dd)
     call sec2hms(sec, hh, min, ss)
 
-    call write_surface_data(ntime,sst,dtdx,dtdy)
+    call write_surface_data(unit_elev,'elevation.dat',ntime,yyyy,mm,dd,hh,min,ss,ssh,fmt_short,dhdx,fmt_long,dhdy,fmt_long)
+    call write_surface_data(unit_heat,'heatflux.dat',ntime,yyyy,mm,dd,hh,min,ss,qnet,fmt_long,qsw,fmt_long)
+    call write_surface_data(unit_mome,'windstress.dat',ntime,yyyy,mm,dd,hh,min,ss,taux,fmt_long,tauy,fmt_long)
+    call write_surface_data(unit_fres,'freshwater.dat',ntime,yyyy,mm,dd,hh,min,ss,fsw,fmt_long)
+    call write_profile_data(unit_temp,'temperature.dat',ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_mid,temp,fmt_mid,dtdx,fmt_long,dtdy,fmt_lon)
+    call write_profile_data(unit_salt,'salinity.dat',ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_mid,salt,fmt_mid,dsdx,fmt_long,dsdy,fmt_long)
   end subroutine prepare_1d_data
+
+  subroutine write_surface_data(fu,fn,ntime,yyyy,mm,dd,hh,min,ss,data1,fmt1,data2,fmt2,data3,fmt3)
+    integer, intent(in) :: fu
+    character(len=*), intent(in) :: fn
+    integer, intent(in) :: ntime
+    integer, dimension(ntime), intent(in) :: yyyy,mm,dd,hh,min,ss
+    REALTYPE, dimension(ntime), intent(in) :: data1
+    character(len=*), intent(in) :: fmt1
+    REALTYPE, dimension(ntime), optional, intent(in) :: data2, data3
+    character(len=*), optional, intent(in) :: fmt2, fmt3
+
+    integer :: ierr, it
+    character(len=1024) :: cmsg
+    character(len=*), parameter :: cfmt_time = 'I4,A,I0.2,A,I0.2,1X,I0.2,A,I0.2,A,I0.2,2X'
+
+    open(unit=fu, file=trim(fn), status='replace', iostat=ierr, iomsg=cmsg)
+    if (ierr /= 0) then
+      print*,trim(cmsg)
+      stop 3
+    endif
+
+    do it = 1, ntime
+      write(unit=fu, fmt='('//trim(cfmt_time)//')', advance='no')yyyy(it),'/',mm(it),'/',dd(it),hh(it),':',min(it),':',ss(it)
+      write(unit=fu, fmt='('//trim(fmt1)//',2X)', advance='no')data1(it)
+      if (present(data2)) then
+        write(unit=fu, fmt='('//trim(fmt2)//',2X)', advance='no')data2(it)
+      endif
+      if (present(data3)) then
+        write(unit=fu, fmt='('//trim(fmt3)//')', advance='no')data3(it)
+      endif
+      write(unit=fu, fmt='(A1)', advance='yes')' '
+    enddo
+
+    close(unit=fu)
+  end subroutine write_surface_data
+
+  subroutine write_profile_data(fu,fn,ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_lev,data1,fmt1,data2,fmt2,data3,fmt3)
+    integer, intent(in) :: fu
+    character(len=*), intent(in) :: fn
+    integer, intent(in) :: ntime, nlev
+    integer, dimension(ntime), intent(in) :: yyyy,mm,dd,hh,min,ss
+    REALTYPE, dimension(nlev), intent(in) :: lev
+    REALTYPE, dimension(nlev, ntime), intent(in) :: data1
+    character(len=*), intent(in) :: fmt_lev, fmt1
+    REALTYPE, dimension(nlev,ntime), optional, intent(in) :: data2, data3
+    character(len=*), optional, intent(in) :: fmt2, fmt3
+
+    integer :: ierr, it, nc
+    character(len=1024) :: cmsg
+    character(len=*), parameter :: cfmt_time = 'I4,A,I0.2,A,I0.2,1X,I0.2,A,I0.2,A,I0.2,2X'
+
+    open(unit=fu, file=trim(fn), status='replace', iostat=ierr, iomsg=cmsg)
+    if (ierr /= 0) then
+      print*,trim(cmsg)
+      stop 3
+    endif
+
+    nc = 2
+    if (present(data2)) nc = nc + 1
+    if (present(data3)) nc = nc + 1
+
+    do it = 1, ntime
+      write(unit=fu, fmt='('//trim(cfmt_time)//')', advance='no')yyyy(it),'/',mm(it),'/',dd(it),hh(it),':',min(it),':',ss(it)
+      write(unit=fu, fmt='(I3,X,I2)', advance='yes')nlev+1,nc
+
+      do il = 1, nlev
+        write(unit=fu, fmt='('//trim(fmt_lev)//',2X)', advance='no')-lev(il)
+        write(unit=fu, fmt='('//trim(fmt1)//',2X)', advance='no')data1(il,it)
+        if (present(data2)) then
+          write(unit=fu, fmt='('//trim(fmt2)//',2X)', advance='no')data2(il,it)
+        endif
+        if (present(data3)) then
+          write(unit=fu, fmt='('//trim(fmt3)//')', advance='no')data3(il,it)
+        endif
+        write(unit=fu, fmt='(A1)', advance='yes')' '
+      enddo
+    enddo
+
+    close(unit=fu)
+  end subroutine write_profile_data
 
   subroutine collect_result()
   end subroutine collect_result
