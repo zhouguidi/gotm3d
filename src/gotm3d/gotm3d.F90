@@ -24,6 +24,7 @@ module gotm3d
   integer, parameter :: per_year = 1
   integer, parameter :: per_month = 2
 
+  integer, parameter :: unit_yaml = 100
   integer, parameter :: unit_temp = 101
   integer, parameter :: unit_salt = 102
   integer, parameter :: unit_elev = 103
@@ -262,7 +263,7 @@ contains
     REALTYPE, dimension(:,:,:,:), allocatable :: dtempdx, dtempdy, dsaltdx, dsaltdy
     REALTYPE, dimension(:,:,:), allocatable :: qnet, qsw, taux, tauy, fsw
 
-    DO year = year_st, year_ed
+    do year = year_st, year_ed
       pyear = year - 1
       nyear = year + 1
 
@@ -316,7 +317,7 @@ contains
                                  dsshdx(ilon,ilat,:),dsshdy(ilon,ilat,:), &
                                  dtempdx(ilon,ilat,:,:),dtempdy(ilon,ilat,:,:), &
                                  dsaltdx(ilon,ilat,:,:),dsaltdy(ilon,ilat,:,:))
-            call prepare_1d_yaml(ipnt)
+            call prepare_1d_yaml(ilon,ilat,ipnt,restart)
             call gotm1d()
           endif
         enddo
@@ -535,7 +536,7 @@ contains
     call sec2hms(sec, hh, min, ss)
 
     call write_surface_data(unit_elev,'elevation.dat',ntime,yyyy,mm,dd,hh,min,ss,ssh,fmt_short,dhdx,fmt_long,dhdy,fmt_long)
-    call write_surface_data(unit_heat,'heatflux.dat',ntime,yyyy,mm,dd,hh,min,ss,qnet,fmt_long,qsw,fmt_long)
+    call write_surface_data(unit_heat,'heatflux.dat',ntime,yyyy,mm,dd,hh,min,ss,qnet-qsw,fmt_long,qsw,fmt_long)
     call write_surface_data(unit_mome,'windstress.dat',ntime,yyyy,mm,dd,hh,min,ss,taux,fmt_long,tauy,fmt_long)
     call write_surface_data(unit_fres,'freshwater.dat',ntime,yyyy,mm,dd,hh,min,ss,fsw,fmt_long)
     call write_profile_data(unit_temp,'temperature.dat',ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_mid,temp,fmt_mid,dtdx,fmt_long,dtdy,fmt_lon)
@@ -621,6 +622,109 @@ contains
 
     close(unit=fu)
   end subroutine write_profile_data
+
+  subroutine prepare_1d_yaml(ilon,ilat,ipnt,restart)
+    integer, intent(in) :: ilon, ilat, ipnt
+    logical, intent(in) :: restart
+
+    open(unit=unit_yaml, file='gotm.yaml', status='replace', iostat=ierr, iomsg=cmsg)
+    if (ierr /= 0) then
+      print*,trim(cmsg)
+      stop 3
+    endif
+
+    write(unit=unit_yaml, fmt='(A)')'title=GOTM simulation'
+    write(unit=unit_yaml, fmt='(A)')'location:'
+    write(unit=unit_yaml, fmt='(A,I0.2,A,I0.2,A,I0.2)')'  name: point_no',ipnt,'_',ilon,'x',ilat
+    write(unit=unit_yaml, fmt='(A,F10.6)')'  latitude: ',lat(ilat)
+    write(unit=unit_yaml, fmt='(A,F11.6)')'  longitude: ',lon(ilon)
+    write(unit=unit_yaml, fmt='(A,F12.6)')'  depth: ',depth(ilon,ilat)-0.01
+    write(unit=unit_yaml, fmt='(A)')'time:'
+    write(unit=unit_yaml, fmt='(A,I0.4,A,I0.2,A,I0.2,A)')'  start: ',year_st,'-',month_st,'-',day_st,' 00:00:00'
+    write(unit=unit_yaml, fmt='(A,I0.4,A,I0.2,A,I0.2,A)')'  stop: ',year_ed,'-',month_ed,'-',day_ed,' 00:00:00'
+    write(unit=unit_yaml, fmt='(A,I0)')'  dt: ',dt
+    write(unit=unit_yaml, fmt='(A)')'grid:'
+    write(unit=unit_yaml, fmt='(A,I0)')'  nlev: ',min(floor(depth(ilon,ilat)), 250)
+    write(unit=unit_yaml, fmt='(A)')'  method: analytical'
+    write(unit=unit_yaml, fmt='(A)')'temperature:'
+    write(unit=unit_yaml, fmt='(A)')'  method: file'
+    write(unit=unit_yaml, fmt='(A)')'  file: temperature.dat'
+    write(unit=unit_yaml, fmt='(A)')'  column: 1'
+    write(unit=unit_yaml, fmt='(A)')'salinity:'
+    write(unit=unit_yaml, fmt='(A)')'  method: file'
+    write(unit=unit_yaml, fmt='(A)')'  file: salinity.dat'
+    write(unit=unit_yaml, fmt='(A)')'  column: 1'
+    write(unit=unit_yaml, fmt='(A)')'surface:'
+    write(unit=unit_yaml, fmt='(A)')'  fluxes:'
+    write(unit=unit_yaml, fmt='(A)')'    heat:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: heatflux.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 1'
+    write(unit=unit_yaml, fmt='(A)')'    tx:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: windstress.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 1'
+    write(unit=unit_yaml, fmt='(A)')'    ty:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: windstress.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 2'
+    write(unit=unit_yaml, fmt='(A)')'  precip:'
+    write(unit=unit_yaml, fmt='(A)')'    method: file'
+    write(unit=unit_yaml, fmt='(A)')'    file: freshwater.dat'
+    write(unit=unit_yaml, fmt='(A)')'    column: 1'
+    write(unit=unit_yaml, fmt='(A)')'  swr:'
+    write(unit=unit_yaml, fmt='(A)')'    method: file'
+    write(unit=unit_yaml, fmt='(A)')'    file: heatflux.dat'
+    write(unit=unit_yaml, fmt='(A)')'    column: 2'
+    write(unit=unit_yaml, fmt='(A)')'mimic_3d:'
+    write(unit=unit_yaml, fmt='(A)')'  ext_pressure:'
+    write(unit=unit_yaml, fmt='(A)')'    type: elevation'
+    write(unit=unit_yaml, fmt='(A)')'    dpdx:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: elevation.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 2'
+    write(unit=unit_yaml, fmt='(A)')'    dpdy:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: elevation.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 3'
+    write(unit=unit_yaml, fmt='(A)')'  int_press:'
+    write(unit=unit_yaml, fmt='(A)')'    dtdx:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: temperature.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 2'
+    write(unit=unit_yaml, fmt='(A)')'    dtdy:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: temperature.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 3'
+    write(unit=unit_yaml, fmt='(A)')'    dsdx:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: salinity.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 2'
+    write(unit=unit_yaml, fmt='(A)')'    dsdy:'
+    write(unit=unit_yaml, fmt='(A)')'      method: file'
+    write(unit=unit_yaml, fmt='(A)')'      file: salinity.dat'
+    write(unit=unit_yaml, fmt='(A)')'      column: 3'
+    write(unit=unit_yaml, fmt='(A)')'  zeta:'
+    write(unit=unit_yaml, fmt='(A)')'    method: file'
+    write(unit=unit_yaml, fmt='(A)')'    file: elevation.dat'
+    write(unit=unit_yaml, fmt='(A)')'    column: 1'
+    write(unit=unit_yaml, fmt='(A)')'restart:'
+    if (restart) then
+      write(unit=unit_yaml, fmt='(A)')'  load: true'
+    else
+      write(unit=unit_yaml, fmt='(A)')'  load: false'
+    endif
+    write(unit=unit_yaml, fmt='(A)')'output:'
+    write(unit=unit_yaml, fmt='(A,I0.2,A,I0.2,A,I0.2,A)')'  point_no',ipnt,'_',ilon,'x',ilat,':'
+    write(unit=unit_yaml, fmt='(A)')'  format: netcdf'
+    write(unit=unit_yaml, fmt='(A)')'  time_unit: dt'
+    write(unit=unit_yaml, fmt='(A)')'  time_step: 1'
+    write(unit=unit_yaml, fmt='(A)')'  time_method: point'
+    write(unit=unit_yaml, fmt='(A)')'  variables:'
+    write(unit=unit_yaml, fmt='(A)')'  - source: *'
+
+    close(unit=unit_yaml)
+  end subroutine prepare_1d_yaml
 
   subroutine collect_result()
   end subroutine collect_result
