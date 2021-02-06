@@ -627,15 +627,18 @@ contains
     integer, intent(in) :: ilon, ilat, ipnt
     logical, intent(in) :: restart
 
+    integer :: ierr
+    character(len=1024) :: cmsg
+
     open(unit=unit_yaml, file='gotm.yaml', status='replace', iostat=ierr, iomsg=cmsg)
     if (ierr /= 0) then
       print*,trim(cmsg)
       stop 3
     endif
 
-    write(unit=unit_yaml, fmt='(A)')'title=GOTM simulation'
+    write(unit=unit_yaml, fmt='(A)')'title: GOTM simulation'
     write(unit=unit_yaml, fmt='(A)')'location:'
-    write(unit=unit_yaml, fmt='(A,I0.2,A,I0.2,A,I0.2)')'  name: point_no',ipnt,'_',ilon,'x',ilat
+    write(unit=unit_yaml, fmt='(A,I0.2,A,I0.2,A,I0.2)')'  name: point_',ipnt,'_',ilon,'x',ilat
     write(unit=unit_yaml, fmt='(A,F10.6)')'  latitude: ',lat(ilat)
     write(unit=unit_yaml, fmt='(A,F11.6)')'  longitude: ',lon(ilon)
     write(unit=unit_yaml, fmt='(A,F12.6)')'  depth: ',depth(ilon,ilat)-0.01
@@ -715,13 +718,13 @@ contains
       write(unit=unit_yaml, fmt='(A)')'  load: false'
     endif
     write(unit=unit_yaml, fmt='(A)')'output:'
-    write(unit=unit_yaml, fmt='(A,I0.2,A,I0.2,A,I0.2,A)')'  point_no',ipnt,'_',ilon,'x',ilat,':'
-    write(unit=unit_yaml, fmt='(A)')'  format: netcdf'
-    write(unit=unit_yaml, fmt='(A)')'  time_unit: dt'
-    write(unit=unit_yaml, fmt='(A)')'  time_step: 1'
-    write(unit=unit_yaml, fmt='(A)')'  time_method: point'
-    write(unit=unit_yaml, fmt='(A)')'  variables:'
-    write(unit=unit_yaml, fmt='(A)')'  - source: *'
+    write(unit=unit_yaml, fmt='(A,I0.2,A,I0.2,A,I0.2,A)')'  point_',ipnt,'_',ilon,'x',ilat,':'
+    write(unit=unit_yaml, fmt='(A)')'    format: netcdf'
+    write(unit=unit_yaml, fmt='(A)')'    time_unit: dt'
+    write(unit=unit_yaml, fmt='(A)')'    time_step: 1'
+    write(unit=unit_yaml, fmt='(A)')'    time_method: point'
+    write(unit=unit_yaml, fmt='(A)')'    variables:'
+    write(unit=unit_yaml, fmt='(A)')'    - source: *'
 
     close(unit=unit_yaml)
   end subroutine prepare_1d_yaml
