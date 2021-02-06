@@ -16,7 +16,7 @@
 ! \sect{sec:gotm}.
 !
 ! !USES:
-   use gotm, ONLY: init_gotm, time_loop, clean_up
+   use time, ONLY: simtime
    use gotm3d, ONLY: init_gotm3d, time_loop_3d, clean_up_3d, gotm3d_yaml_file
                      
 !

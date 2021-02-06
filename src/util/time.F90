@@ -262,9 +262,9 @@
     integer, intent(in) :: sec
     integer, intent(out) :: hh, mm, ss
 
-    hh   = secs/3600
-    mm  = (secs-hh*3600)/60
-    ss   = secs - 3600*hh - 60*mm
+    hh   = sec/3600
+    mm  = (sec-hh*3600)/60
+    ss   = sec - 3600*hh - 60*mm
   end subroutine sec2hms
 
   elemental function hms2sec(hh,mm,ss) result(sec)

@@ -146,6 +146,10 @@
    contains
 
    subroutine gotm1d()
+     character(LEN=8)          :: systemdate
+     character(LEN=10)         :: systemtime
+     real                      :: t1=-1,t2=-1
+
   !  monitor CPU time and report system time and date
 #ifdef FORTRAN95
      call CPU_Time(t1)
@@ -203,7 +207,7 @@
 
     call print_version()
 
-   end subroutine gotm1d()
+   end subroutine gotm1d
 
 !-----------------------------------------------------------------------
 !BOP

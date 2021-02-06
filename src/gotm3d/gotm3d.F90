@@ -1,12 +1,17 @@
 #include"cppdefs.h"
 module gotm3d
 
-  use time, ONLY: read_time_string, calendar_date
+  use time, ONLY: read_time_string, calendar_date, sec2hms
   use settings, ONLY: type_settings, type_gotm_settings
+  use ncio, ONLY: ncread_dimshape, ncread_lonlatlev, ncread_surface, &
+                  ncread_subsurface, ncread_timelen, ncread_missing, ncread_time
+  use gotm
 
   implicit none
 
   private
+  public :: init_gotm3d, time_loop_3d, clean_up_3d
+
   integer, parameter         :: namlst=10
 
   type(type_gotm_settings) :: settings_3d
@@ -17,8 +22,6 @@ module gotm3d
   integer            :: year_ed, month_ed, day_ed
   integer            :: dt
   integer            :: time_unit
-
-  integer :: npnt
 
   integer, parameter :: one_file = 0
   integer, parameter :: per_year = 1
@@ -36,6 +39,8 @@ module gotm3d
   REALTYPE, dimension(:), allocatable :: lon, lat, lev
   integer, dimension(:,:), allocatable :: botlev
   REALTYPE, dimension(:,:), allocatable :: depth
+
+  REALTYPE :: missing
 
   character(len=1024) :: sst_file, sss_file, ssh_file, temp_file, salt_file
   character(len=1024) :: qnet_file, qsw_file, taux_file, tauy_file, fsw_file
@@ -55,10 +60,10 @@ contains
     class (type_settings), pointer :: branch, twig
     
     character(len=1024) :: fn
-    REALTYPE, dimension(:,:), allocatable :: t2
     REALTYPE, dimension(:,:,:), allocatable :: t3
-    integer, ilon, ilat, ntime
-    REALTYPE :: missing
+    REALTYPE, dimension(:,:,:,:), allocatable :: t4
+    integer :: ilon, ilat, ntime
+    logical :: file_exists
 
     LEVEL1 'init_gotm3d'
     settings_3d%path = ''
@@ -77,8 +82,8 @@ contains
                     default='2017-01-01 00:00:00')
     call branch%get(dt_stop, 'stop', 'stop date and time', units='yyyy-mm-dd HH:MM:SS', &
                     default='2017-12-31 00:00:00')
-    call branch%get(dt, 'dt', 'time step for integration', 's', &
-                    minimum=0_timestepkind, default=3600_timestepkind)
+    call branch%get(dt, 'dt', 'time step for integration', units='s', &
+                    minimum=0, default=3600)
     call read_time_string(dt_start,jul_st,sec_st)
     call read_time_string(dt_stop,jul_ed,sec_ed)
 
@@ -158,88 +163,30 @@ contains
     call ncread_lonlatlev(trim(fn), nlon, nlat, nlev, lon, lat, lev)
 
     ! get missing value, bottom level, and depth
-    allocate(t3(nlon, nlat, nlev))
+    allocate(t3(nlon, nlat, 1))
+    allocate(t4(nlon, nlat, nlev, 1))
     ntime = ncread_timelen(trim(fn))
-    t3 = ncread_subsurface(trim(fn), trim(temp_name), nlon, nlat, nlev, ntime, 1, "first")
+    t4 = ncread_subsurface(trim(fn), trim(temp_name), nlon, nlat, nlev, ntime, 1, "first")
     missing = ncread_missing(trim(fn), trim(temp_name))
     allocate(botlev(nlon, nlat))
     allocate(depth(nlon, nlat))
-    botlev = findloc(t3, missing, dim=3)
-    where (botlev == 0)
-      botlev = nlev
-      depth = lev(nlev)
-    elsewhere (botlev == 1)
-      depth = 0
-    else
-      depth = lev(botlev)
-    endwhere
+    t3 = findloc(t4, missing, dim=3)
+    botlev(:,:) = t3(:,:,1)
+    do ilon = 1, nlon
+      do ilat = 1, nlat
+        if (botlev(ilon,ilat) == 0) then
+          depth(ilon, ilat) = lev(nlev)
+        elseif (botlev(ilon,ilat) == 1) then
+          depth(ilon, ilat) = 0
+        else
+          depth(ilon,ilat) = lev(botlev(ilon,ilat))
+        endif
+      enddo
+    enddo
     npnt = count(depth == 0)
 
-    deallocate(t3)
+    deallocate(t4)
   end subroutine init_gotm3d
-
-  function pack_ocean_const(nlon, nlat, nlev, npnt, data, mask) result(oce)
-    integer, intent(in) :: nlon, nlat, nlev, npnt
-    REALTYPE, dimension(nlon, nlat, nlev), intent(in) :: data
-    logical, dimension(nlon, nlat), intent(in) :: mask
-
-    REALTYPE, dimension(npnt, nlev) :: oce
-
-    integer :: i, j, k
-
-    k = 0
-    do i = 1, nlon
-      do j = 1, nlat
-        if (mask(i,j)) then
-          k = k + 1
-          oce(k, :) = data(i, j, :)
-        endif
-      enddo
-    enddo
-  end function pack_ocean_const
-
-  function pack_ocean_series(nlon, nlat, nlev, npnt, ntime, data, mask) result(oce)
-    integer, intent(in) :: nlon, nlat, nlev, npnt, ntime
-    REALTYPE, dimension(nlon, nlat, nlev, ntime), intent(in) :: data
-    logical, dimension(nlon, nlat), intent(in) :: mask
-
-    REALTYPE, dimension(npnt, nlev, ntime) :: oce
-
-    integer :: i, j, k
-
-    k = 0
-    do i = 1, nlon
-      do j = 1, nlat
-        if (mask(i,j)) then
-          k = k + 1
-          oce(k, :, :) = data(i, j, :, :)
-        endif
-      enddo
-    enddo
-  end function pack_ocean_series
-
-  function unpack_ocean(nlon, nlat, nlev, npnt, oce, mask, missing) result(data)
-    integer, intent(in) :: nlon, nlat, nlev, npnt
-    REALTYPE, dimension(npnt, nlev), intent(in) :: oce
-    logical, dimension(nlon, nlat), intent(in) :: mask
-    REALTYPE, intent(in) :: missing
-
-    REALTYPE, dimension(nlon, nlat, nlev) :: data
-
-    integer :: i, j, k
-
-    k = 0
-    do i = 1, nlon
-      do j = 1, nlat
-        if (mask(i,j)) then
-          k = k + 1
-          data(i, j, :) = oce(k, :)
-        else
-          data(i, j, :) = missing
-        endif
-      enddo
-    enddo
-  end function unpack_ocean
 
   subroutine time_loop_3d()
     IF (time_unit == one_file) THEN
@@ -252,7 +199,7 @@ contains
   end subroutine time_loop_3d
 
   subroutine time_loop_3d_year
-    integer :: year, pyear, nyear
+    integer :: year, pyear, nyear, ilon, ilat, ipnt
     logical :: restart
     character(len=1024) :: fn
     integer :: ntime
@@ -311,7 +258,7 @@ contains
         do ilat = 1, nlat
           if (depth(ilon, ilat) /= 0) then
             ipnt = ipnt + 1
-            call prepare_1d_data(nlev+1,ntime,time_jul,time_sec,(/0.0,lev/),ssh(ilon,ilat,:),&
+            call prepare_1d_data(nlev+1,ntime,time_jul,time_sec,(/0.0_8,lev/),ssh(ilon,ilat,:),&
                                  qnet(ilon,ilat,:),qsw(ilon,ilat,:),taux(ilon,ilat,:),tauy(ilon,ilat,:),fsw(ilon,ilat,:),&
                                  temp(ilon,ilat,:,:),salt(ilon,ilat,:,:), &
                                  dsshdx(ilon,ilat,:),dsshdy(ilon,ilat,:), &
@@ -324,11 +271,11 @@ contains
       enddo
       call collect_result()
 
-      deallocate(time_jul, timesec)
-      deallocate(sst, ssh, sss)
+      deallocate(time_jul, time_sec)
+      deallocate(ssh)
       deallocate(qnet, qsw, taux, tauy, fsw)
       deallocate(temp, salt)
-      deallocate(dsstdx, dsstdy, dsshdx, dsshdy, dsssdx, dsssdy)
+      deallocate(dsshdx, dsshdy)
       deallocate(dtempdx, dtempdy, dsaltdx, dsaltdy)
     enddo
   end subroutine time_loop_3d_year
@@ -438,8 +385,7 @@ contains
   subroutine read_time_year_2d(fn, year, ntime, jul, sec)
     character(len=*), intent(in) :: fn
     integer, intent(in) :: year, ntime
-    integer, dimension(ntime+2), intent(out) :: jul
-    REALTYPE, dimension(ntime+2), intent(out) :: sec
+    integer, dimension(ntime+2), intent(out) :: jul, sec
 
     character(len=1024) :: fn1
     integer :: ntime_p, ntime_n
@@ -452,7 +398,7 @@ contains
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
     call ncread_time(trim(fn1), ntime_n, 1, jul(ntime+2), sec(ntime+2))
-  end function read_time_year_2d
+  end subroutine read_time_year_2d
 
   function read_data_year_2d(fn, varn, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
@@ -463,13 +409,13 @@ contains
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    data(:, 2:ntime+1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime, ntime)
+    data(:, :, 2:ntime+1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime, ntime)
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    data(:, 1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_p, 1, "last")
+    data(:, :, 1:1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_p, 1, "last")
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    data(:, ntime+2) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_n, 1)
+    data(:, :, ntime+2:ntime+2) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_n, 1)
   end function read_data_year_2d
 
   function read_data_year_3d(fn, varn, year, ntime) result(data)
@@ -481,13 +427,13 @@ contains
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    data(:, :, 2:ntime+1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime, ntime)
+    data(:, :, :, 2:ntime+1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime, ntime)
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    data(:, :, 1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_p, 1, 'last')
+    data(:, :, :, 1:1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_p, 1, 'last')
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    data(:, :, ntime+2) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_n, 1)
+    data(:, :, :, ntime+2:ntime+2) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_n, 1)
   end function read_data_year_3d
 
   function substitute_file_year(file, year) result(newfile)
@@ -513,6 +459,41 @@ contains
       newfile = file
     endif
   end function substitute_file_year
+  
+  function substitute_file_year_month(file, year, month) result(newfile)
+    character(len=*), intent(in) :: file
+    integer,intent(in) :: year, month
+    character(len=1024) :: newfile
+
+    integer :: pos
+    character(len=4) :: strmonth
+
+    newfile = substitute_file_year(file, year)
+
+    write(strmonth,*)month
+    pos = index(file, '%month%')
+    if (pos == 0) then
+      pos = index(file, '%MONTH%')
+      if (pos == 0) then
+        pos = index(file, '%Month%')
+        if (pos == 0) then
+          pos = index(file, '%mon%')
+          if (pos == 0) then
+            pos = index(file, '%MON%')
+            if (pos == 0) then
+              pos = index(file, '%Mon%')
+            endif
+          endif
+        endif
+      endif
+    endif
+
+    if (pos /= 0) then
+      newfile = file(1:pos-1) // strmonth // file(pos+6:)
+    else
+      newfile = file
+    endif
+  end function substitute_file_year_month
 
   subroutine prepare_1d_data(nlev,ntime,jul,sec,lev,ssh,&
                              qnet,qsw,taux,tauy,fsw,&
@@ -525,7 +506,7 @@ contains
     REALTYPE, dimension(nlev), intent(in) :: lev
     REALTYPE, dimension(ntime), intent(in) :: ssh
     REALTYPE, dimension(ntime), intent(in) :: qnet,qsw,taux,tauy,fsw
-    REALTYPE, dimension(nlev, ntime), intent(in) :: temp,salt,
+    REALTYPE, dimension(nlev, ntime), intent(in) :: temp,salt
     REALTYPE, dimension(ntime), intent(in) :: dhdx,dhdy
     REALTYPE, dimension(nlev, ntime), intent(in) :: dtdx,dtdy,dsdx,dsdy
 
@@ -539,7 +520,7 @@ contains
     call write_surface_data(unit_heat,'heatflux.dat',ntime,yyyy,mm,dd,hh,min,ss,qnet-qsw,fmt_long,qsw,fmt_long)
     call write_surface_data(unit_mome,'windstress.dat',ntime,yyyy,mm,dd,hh,min,ss,taux,fmt_long,tauy,fmt_long)
     call write_surface_data(unit_fres,'freshwater.dat',ntime,yyyy,mm,dd,hh,min,ss,fsw,fmt_long)
-    call write_profile_data(unit_temp,'temperature.dat',ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_mid,temp,fmt_mid,dtdx,fmt_long,dtdy,fmt_lon)
+    call write_profile_data(unit_temp,'temperature.dat',ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_mid,temp,fmt_mid,dtdx,fmt_long,dtdy,fmt_long)
     call write_profile_data(unit_salt,'salinity.dat',ntime,nlev,yyyy,mm,dd,hh,min,ss,lev,fmt_mid,salt,fmt_mid,dsdx,fmt_long,dsdy,fmt_long)
   end subroutine prepare_1d_data
 
@@ -589,7 +570,7 @@ contains
     REALTYPE, dimension(nlev,ntime), optional, intent(in) :: data2, data3
     character(len=*), optional, intent(in) :: fmt2, fmt3
 
-    integer :: ierr, it, nc
+    integer :: ierr, it, il, nc
     character(len=1024) :: cmsg
     character(len=*), parameter :: cfmt_time = 'I4,A,I0.2,A,I0.2,1X,I0.2,A,I0.2,A,I0.2,2X'
 
@@ -731,5 +712,11 @@ contains
 
   subroutine collect_result()
   end subroutine collect_result
+
+  subroutine time_loop_3d_month()
+  end subroutine time_loop_3d_month
+
+  subroutine clean_up_3d()
+  end subroutine clean_up_3d
 
 end module gotm3d

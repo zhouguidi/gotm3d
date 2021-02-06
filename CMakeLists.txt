@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
-if(NOT PROJECT_NAME STREQUAL gotm)
-   project(gotm VERSION 6.0.0 LANGUAGES Fortran)
+if(NOT PROJECT_NAME STREQUAL gotm3d)
+   project(gotm3d VERSION 1.0.0 LANGUAGES Fortran)
 endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/")
@@ -21,7 +21,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # To check version of configuration file
-add_definitions(-D_CFG_VERSION_=${gotm_VERSION_MAJOR})
+add_definitions(-D_CFG_VERSION_=${gotm3d_VERSION_MAJOR})
 
 # ----------------------------
 # User-configurable options
@@ -29,7 +29,7 @@ add_definitions(-D_CFG_VERSION_=${gotm_VERSION_MAJOR})
 
 option(GOTM_USE_CVMIX "Include support for the CVMix turbulence closure models (github.com/CVMix)" OFF)
 
-option(GOTM_USE_FABM "Include support for Framework for Aquatic Biogeochemical Models (fabm.net)" ON)
+option(GOTM_USE_FABM "Include support for Framework for Aquatic Biogeochemical Models (fabm.net)" OFF)
 
 option(GOTM_USE_STIM "Include support for Simple Thermodynamic Ice Models - STIM" OFF)
 
@@ -97,12 +97,12 @@ endif(GOTM_USE_STIM)
 # Set default installation prefix (done after dependencies to ensure ours takes precedence)
 if(WIN32)
   if(DEFINED ENV{LOCALAPPDATA})
-    set(DEFAULT_PREFIX "$ENV{LOCALAPPDATA}/gotm")
+    set(DEFAULT_PREFIX "$ENV{LOCALAPPDATA}/gotm3d")
   else()
-    set(DEFAULT_PREFIX "$ENV{APPDATA}/gotm")
+    set(DEFAULT_PREFIX "$ENV{APPDATA}/gotm3d")
   endif()
 else()
-  set(DEFAULT_PREFIX "$ENV{HOME}/local/gotm")
+  set(DEFAULT_PREFIX "$ENV{HOME}/local/gotm3d")
 endif()
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   # Still on CMake default - override with our own default.

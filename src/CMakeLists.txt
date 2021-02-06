@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-if(NOT PROJECT_NAME STREQUAL gotm)
+if(NOT PROJECT_NAME STREQUAL gotm3d)
    message(FATAL_ERROR "You are using ${CMAKE_CURRENT_LIST_DIR} as source directory. Please use its parent directory instead.")
 endif()
 
@@ -77,14 +77,16 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/gotm gotmlib)
 
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/gotm3d gotm3dlib)
+
 # Build GOTM executable.
-add_executable(gotm_exe
+add_executable(gotm3d_exe
    ${CMAKE_CURRENT_LIST_DIR}/gotm3d/main.F90
 )
-set_property(TARGET gotm_exe PROPERTY RUNTIME_OUTPUT_NAME "gotm")
-target_link_libraries(gotm_exe PRIVATE gotm)
+set_property(TARGET gotm3d_exe PROPERTY RUNTIME_OUTPUT_NAME "gotm3d")
+target_link_libraries(gotm3d_exe PRIVATE gotm3d netcdff)
 
 # Install GOTM executable
-install(TARGETS gotm_exe RUNTIME DESTINATION bin)
+install(TARGETS gotm3d_exe RUNTIME DESTINATION bin)
 
 install(EXPORT gotmConfig DESTINATION cmake NAMESPACE gotm::)
