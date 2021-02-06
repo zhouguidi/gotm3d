@@ -102,7 +102,7 @@ if(WIN32)
     set(DEFAULT_PREFIX "$ENV{APPDATA}/gotm3d")
   endif()
 else()
-  set(DEFAULT_PREFIX "$ENV{HOME}/local/gotm3d")
+  set(DEFAULT_PREFIX "$ENV{HOME}/.local/gotm3d")
 endif()
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   # Still on CMake default - override with our own default.
