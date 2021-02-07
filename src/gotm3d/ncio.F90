@@ -395,7 +395,7 @@ module ncio
   subroutine handle_err(ierr,msg)
     integer, intent(in) :: ierr
     character(len=*), optional :: msg
-    LEVEL2 'read_restart_data(): error'
+    LEVEL2 'ncio: error'
     if (present(msg)) then
        LEVEL3 trim(nf90_strerror(ierr)),' - ',trim(msg)
     else

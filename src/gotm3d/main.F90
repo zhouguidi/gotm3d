@@ -17,7 +17,7 @@
 !
 ! !USES:
    use time, ONLY: simtime
-   use gotm3d, ONLY: init_gotm3d, time_loop_3d, clean_up_3d, gotm3d_yaml_file
+   use gotm3d, ONLY: init_gotm3d, time_loop_3d, clean_up_3d, gotm3d_nmlt_file
                      
 !
    IMPLICIT NONE
@@ -133,8 +133,8 @@
             FATAL 'Command line option '//trim(arg)//' not recognized. Use -h to see supported options'
             stop 2
          end if
-         gotm3d_yaml_file = arg
-         inquire(file=trim(gotm3d_yaml_file),exist=file_exists)
+         gotm3d_nmlt_file = arg
+         inquire(file=trim(gotm3d_nmlt_file),exist=file_exists)
          if (.not. file_exists) then
             FATAL 'Custom configuration file '//trim(arg)//' does not exist.'
             stop 2
@@ -169,7 +169,7 @@
       print '(a)', '  -h, --help            print usage information and exit'
       print '(a)', '  -v, --version         print version information'
       print '(a)', '  -c, --compiler        print compilation options'
-      print '(a)', '  <yaml_file>           read configuration from file (default gotm3d.yaml)'
+      print '(a)', '  <namelist file>       read configuration from file (default gotm3d.nml)'
       print '(a)', ''
    end subroutine print_help
 

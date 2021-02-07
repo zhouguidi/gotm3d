@@ -2,10 +2,9 @@
 module gotm3d
 
   use time, ONLY: read_time_string, calendar_date, sec2hms
-  use settings, ONLY: type_settings, type_gotm_settings
   use ncio, ONLY: ncread_dimshape, ncread_lonlatlev, ncread_surface, &
                   ncread_subsurface, ncread_timelen, ncread_missing, ncread_time
-  use gotm
+  use gotm, ONLY: gotm1d
 
   implicit none
 
@@ -14,26 +13,25 @@ module gotm3d
 
   integer, parameter         :: namlst=10
 
-  type(type_gotm_settings) :: settings_3d
-
   character(len=19)  :: dt_start, dt_stop
   integer            :: jul_st, sec_st, jul_ed, sec_ed
   integer            :: year_st, month_st, day_st
   integer            :: year_ed, month_ed, day_ed
-  integer            :: dt
+  integer            :: dt_intv
   integer            :: time_unit
 
   integer, parameter :: one_file = 0
   integer, parameter :: per_year = 1
   integer, parameter :: per_month = 2
 
-  integer, parameter :: unit_yaml = 100
-  integer, parameter :: unit_temp = 101
-  integer, parameter :: unit_salt = 102
-  integer, parameter :: unit_elev = 103
-  integer, parameter :: unit_heat = 104
-  integer, parameter :: unit_mome = 105
-  integer, parameter :: unit_fres = 106
+  integer, parameter :: unit_nmlt = 100
+  integer, parameter :: unit_yaml = 101
+  integer, parameter :: unit_temp = 102
+  integer, parameter :: unit_salt = 103
+  integer, parameter :: unit_elev = 104
+  integer, parameter :: unit_heat = 105
+  integer, parameter :: unit_mome = 106
+  integer, parameter :: unit_fres = 107
 
   integer :: nlon, nlat, nlev, npnt
   REALTYPE, dimension(:), allocatable :: lon, lat, lev
@@ -47,7 +45,7 @@ module gotm3d
   character(len=100) :: sst_name, sss_name, ssh_name, temp_name, salt_name
   character(len=100) :: qnet_name, qsw_name, taux_name, tauy_name, fsw_name
 
-  character(len=1024), public :: gotm3d_yaml_file = 'gotm3d.yaml'
+  character(len=1024), public :: gotm3d_nmlt_file = 'gotm3d.nml'
 
   REALTYPE, parameter :: pi = 3.141592653
   REALTYPE, parameter :: R = 6371000
@@ -57,72 +55,57 @@ module gotm3d
 contains
 
   subroutine init_gotm3d()
-    class (type_settings), pointer :: branch, twig
-    
     character(len=1024) :: fn
     REALTYPE, dimension(:,:,:), allocatable :: t3
     REALTYPE, dimension(:,:,:,:), allocatable :: t4
     integer :: ilon, ilat, ntime
     logical :: file_exists
+    integer :: ierr
+    character(len=1024) :: cmsg
+    namelist /gotm3d_config/ dt_start, dt_stop, dt_intv, sst_file, sst_name, &
+                             ssh_file, ssh_name, sss_file, sss_name, qnet_file, &
+                             qnet_name, qsw_file, qsw_name, taux_file, taux_name, &
+                             tauy_file, tauy_name, fsw_file, fsw_name, temp_file, &
+                             temp_name, salt_file, salt_name
+
+    dt_start = '2017-01-01 00:00:00'
+    dt_stop = '2017-12-31 00:00:00'
+    dt_intv = 3600
+    sst_file = 'sst.nc'
+    sst_name = 'sst'
+    ssh_file = 'ssh.nc'
+    ssh_name = 'ssh'
+    sss_file = 'sss.nc'
+    sss_name = 'sss'
+    qnet_file = 'qnet.nc'
+    qnet_name = 'qnet'
+    qsw_file = 'qsw.nc'
+    qsw_name = 'qsw'
+    taux_file = 'taux.nc'
+    taux_name = 'taux'
+    tauy_file = 'tauy.nc'
+    tauy_name = 'tauy'
+    fsw_file = 'fsw.nc'
+    fsw_name = 'fsw'
+    temp_file = 'temp.nc'
+    temp_name = 'temp'
+    salt_file = 'salt.nc'
+    salt_name = 'salt'
 
     LEVEL1 'init_gotm3d'
-    settings_3d%path = ''
-    inquire(file=trim(gotm3d_yaml_file),exist=file_exists)
-    if (file_exists) then
-       LEVEL2 'Reading configuration from: ',trim(gotm3d_yaml_file)
-       call settings_3d%load(trim(gotm3d_yaml_file), namlst)
-    else
-       FATAL 'Configuration file ' // trim(gotm3d_yaml_file) // ' not found.'
-       stop 2
-    end if
 
-    ! time handling
-    branch => settings_3d%get_child('time')
-    call branch%get(dt_start, 'start', 'start date and time', units='yyyy-mm-dd HH:MM:SS', &
-                    default='2017-01-01 00:00:00')
-    call branch%get(dt_stop, 'stop', 'stop date and time', units='yyyy-mm-dd HH:MM:SS', &
-                    default='2017-12-31 00:00:00')
-    call branch%get(dt, 'dt', 'time step for integration', units='s', &
-                    minimum=0, default=3600)
+    open(unit=unit_nmlt, file=trim(gotm3d_nmlt_file), status='old', iostat=ierr, iomsg=cmsg)
+    if (ierr /= 0) then
+      print*,trim(cmsg)
+      stop 3
+    endif
+    read(unit=unit_nmlt, nml=gotm3d_config)
+    close(unit=unit_nmlt)
+
     call read_time_string(dt_start,jul_st,sec_st)
     call read_time_string(dt_stop,jul_ed,sec_ed)
-
     call calendar_date(jul_st, year_st, month_st, day_st)
     call calendar_date(jul_ed, year_ed, month_ed, day_ed)
-
-    ! forcing files
-    branch => settings_3d%get_child('surface')
-    twig => branch%get_child('sst')
-    call twig%get(sst_file, 'file', 'SST file name (can contain placeholders such as %year% and %month%)', units='degC', default='sst.nc')
-    call twig%get(sst_name, 'name', 'variable name for SST in the file', default='sst')
-    twig => branch%get_child('ssh')
-    call twig%get(ssh_file, 'file', 'SSH file name (can contain placeholders such as %year% and %month%)', units='m', default='ssh.nc')
-    call twig%get(ssh_name, 'name', 'variable name for SSH in the file', default='ssh')
-    twig => branch%get_child('sss')
-    call twig%get(sss_file, 'file', 'SSS file name (can contain placeholders such as %year% and %month%)', units='psu', default='sss.nc')
-    call twig%get(sss_name, 'name', 'variable name for SSS in the file', default='sss')
-    twig => branch%get_child('qnet')
-    call twig%get(qnet_file, 'file', 'net *downward* radiation file name (can contain placeholders such as %year% and %month%)', units='W/m2', default='qnet.nc')
-    call twig%get(qnet_name, 'name', 'variable name for QNET in the file', default='qnet')
-    twig => branch%get_child('qsw')
-    call twig%get(qsw_file, 'file', 'shortwave *downward* radiation file name (can contain placeholders such as %year% and %month%)', units='W/m2', default='qsw.nc')
-    call twig%get(qsw_name, 'name', 'variable name for QSW in the file', default='qsw')
-    twig => branch%get_child('taux')
-    call twig%get(taux_file, 'file', 'momentum flux (wind stress) x-component file name (can contain placeholders such as %year% and %month%)', units='N/m2', default='taux.nc')
-    call twig%get(taux_name, 'name', 'variable name for TAUX in the file', default='taux')
-    twig => branch%get_child('tauy')
-    call twig%get(tauy_file, 'file', 'momentum flux (wind stress) y-component file name (can contain placeholders such as %year% and %month%)', units='N/m2', default='tauy.nc')
-    call twig%get(tauy_name, 'name', 'variable name for TAUY in the file', default='tauy')
-    twig => branch%get_child('fsw')
-    call twig%get(fsw_file, 'file', 'net *downward* freshwater flux file name (can contain placeholders such as %year% and %month%)', units='kg/m2', default='fsw.nc')
-    call twig%get(fsw_name, 'name', 'variable name for FSW in the file', default='fsw')
-    branch => settings_3d%get_child('subsurface')
-    twig => branch%get_child('temp')
-    call twig%get(temp_file, 'file', 'subsurface temperature forcing file name (can contain placeholders such as %year% and %month%)', default='temp.nc')
-    call twig%get(temp_name, 'name', 'variable name for subsurface temperature in the forcing file', default='temp')
-    twig => branch%get_child('salt')
-    call twig%get(salt_file, 'file', 'subsurface salinity forcing file name (can contain placeholders such as %year% and %month%)', default='salt.nc')
-    call twig%get(salt_name, 'name', 'variable name for subsurface salinity in the forcing file', default='salt')
 
     ! determine forcing file type (regarding time), and get an example file of the first year
     if (index(temp_file, '%year%') /= 0) then
@@ -444,7 +427,7 @@ contains
     integer :: pos
     character(len=4) :: stryear
 
-    write(stryear,*)year
+    write(stryear, fmt='(I0)')year
     pos = index(file, '%year%')
     if (pos == 0) then
       pos = index(file, '%YEAR%')
@@ -470,7 +453,7 @@ contains
 
     newfile = substitute_file_year(file, year)
 
-    write(strmonth,*)month
+    write(strmonth, fmt='(I0.2)')month
     pos = index(file, '%month%')
     if (pos == 0) then
       pos = index(file, '%MONTH%')
@@ -626,7 +609,7 @@ contains
     write(unit=unit_yaml, fmt='(A)')'time:'
     write(unit=unit_yaml, fmt='(A,I0.4,A,I0.2,A,I0.2,A)')'  start: ',year_st,'-',month_st,'-',day_st,' 00:00:00'
     write(unit=unit_yaml, fmt='(A,I0.4,A,I0.2,A,I0.2,A)')'  stop: ',year_ed,'-',month_ed,'-',day_ed,' 00:00:00'
-    write(unit=unit_yaml, fmt='(A,I0)')'  dt: ',dt
+    write(unit=unit_yaml, fmt='(A,I0)')'  dt: ',dt_intv
     write(unit=unit_yaml, fmt='(A)')'grid:'
     write(unit=unit_yaml, fmt='(A,I0)')'  nlev: ',min(floor(depth(ilon,ilat)), 250)
     write(unit=unit_yaml, fmt='(A)')'  method: analytical'
@@ -717,6 +700,8 @@ contains
   end subroutine time_loop_3d_month
 
   subroutine clean_up_3d()
+    deallocate(lon, lat, lev)
+    deallocate(botlev, depth)
   end subroutine clean_up_3d
 
 end module gotm3d
