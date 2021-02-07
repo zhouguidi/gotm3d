@@ -6,7 +6,8 @@ module ncio
 
   implicit none
 
-  public ncread_dimshape, ncread_timelen, ncread_lonlat, ncread_lonlatlev, ncread_surface, ncread_subsurface
+  public ncread_dimshape, ncread_timelen, ncread_lonlat, ncread_lonlatlev, &
+         ncread_surface, ncread_subsurface, ncread_ts, ncread_prof_ts
 
   contains
   subroutine ncread_dimshape(fn, nlon, nlat, nlev)
@@ -369,6 +370,58 @@ module ncio
     endif
     if (ierr /= NF90_NOERR) call handle_err(ierr)
   end function ncread_subsurface
+
+  function ncread_ts(fn, varn, ilon, ilat, ntime_tot, ntime, loc) result(data)
+    character(len=*), intent(in) :: fn
+    character(len=*), intent(in) :: varn
+    integer, intent(in) :: ilon, ilat, ntime_tot, ntime
+    character(len=*), optional, intent(in) :: loc
+
+    REALTYPE, dimension(ntime) :: data
+
+    integer :: ncid, varid, ierr
+    logical :: last
+
+    ierr = nf90_open(trim(fn),NF90_NOWRITE,ncid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    ierr = nf90_inq_varid(ncid, trim(varn), varid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    last = present(loc) .and. loc == "last"
+    if (last) then
+      ierr = nf90_get_var(ncid, varid, data, start=(/ilon,ilat,ntime_tot-ntime+1/), count=(/1,1,ntime/))
+    else
+      ierr = nf90_get_var(ncid, varid, data, start=(/ilon,ilat,1/), count=(/1,1,ntime/))
+    endif
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+  end function ncread_ts
+
+  function ncread_prof_ts(fn, varn, ilon, ilat, nlev, ntime_tot, ntime, loc) result(data)
+    character(len=*), intent(in) :: fn
+    character(len=*), intent(in) :: varn
+    integer, intent(in) :: ilon, ilat, nlev, ntime_tot, ntime
+    character(len=*), optional, intent(in) :: loc
+
+    REALTYPE, dimension(nlev, ntime) :: data
+
+    integer :: ncid, varid, ierr
+    logical :: last
+
+    ierr = nf90_open(trim(fn),NF90_NOWRITE,ncid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    ierr = nf90_inq_varid(ncid, trim(varn), varid)
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+
+    last = present(loc) .and. loc == "last"
+    if (last) then
+      ierr = nf90_get_var(ncid, varid, data, start=(/ilon,ilat,1,ntime_tot-ntime+1/), count=(/1,1,nlev,ntime/))
+    else
+      ierr = nf90_get_var(ncid, varid, data, start=(/ilon,ilat,1,1/), count=(/1,1,nlev,ntime/))
+    endif
+    if (ierr /= NF90_NOERR) call handle_err(ierr)
+  end function ncread_prof_ts
 
   function ncread_missing(fn, varn) result(missing)
     character(len=*), intent(in) :: fn

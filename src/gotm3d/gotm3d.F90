@@ -2,8 +2,8 @@
 module gotm3d
 
   use time, ONLY: read_time_string, calendar_date, sec2hms
-  use ncio, ONLY: ncread_dimshape, ncread_lonlatlev, ncread_surface, &
-                  ncread_subsurface, ncread_timelen, ncread_missing, ncread_time
+  use ncio, ONLY: ncread_dimshape, ncread_lonlatlev, ncread_subsurface, ncread_ts, &
+                  ncread_prof_ts, ncread_timelen, ncread_missing, ncread_time
   use gotm, ONLY: gotm1d
 
   implicit none
@@ -42,15 +42,14 @@ module gotm3d
 
   character(len=1024) :: sst_file, sss_file, ssh_file, temp_file, salt_file
   character(len=1024) :: qnet_file, qsw_file, taux_file, tauy_file, fsw_file
+  character(len=1024) :: dsshdx_file, dsshdy_file, dsstdx_file, dsstdy_file, dsssdx_file, dsssdy_file
+  character(len=1024) :: dtempdx_file, dtempdy_file, dsaltdx_file, dsaltdy_file
   character(len=100) :: sst_name, sss_name, ssh_name, temp_name, salt_name
   character(len=100) :: qnet_name, qsw_name, taux_name, tauy_name, fsw_name
+  character(len=100) :: dsshdx_name, dsshdy_name, dsstdx_name, dsstdy_name, dsssdx_name, dsssdy_name
+  character(len=100) :: dtempdx_name, dtempdy_name, dsaltdx_name, dsaltdy_name
 
   character(len=1024), public :: gotm3d_nmlt_file = 'gotm3d.nml'
-
-  REALTYPE, parameter :: pi = 3.141592653
-  REALTYPE, parameter :: R = 6371000
-  REALTYPE, parameter :: deg2rad = pi / 180
-  REALTYPE, parameter :: deg2m = deg2rad * R
 
 contains
 
@@ -66,17 +65,35 @@ contains
                              ssh_file, ssh_name, sss_file, sss_name, qnet_file, &
                              qnet_name, qsw_file, qsw_name, taux_file, taux_name, &
                              tauy_file, tauy_name, fsw_file, fsw_name, temp_file, &
-                             temp_name, salt_file, salt_name
+                             temp_name, salt_file, salt_name, &
+                             dsshdx_file, dsshdx_name, dsshdy_file, dsshdy_name, &
+                             dsstdx_file, dsstdx_name, dsstdy_file, dsstdy_name, &
+                             dsssdx_file, dsssdx_name, dsssdy_file, dsssdy_name, &
+                             dtempdx_file, dtempdx_name, dtempdy_file, dtempdy_name, &
+                             dsaltdx_file, dsaltdx_name, dsaltdy_file, dsaltdy_name
+
 
     dt_start = '2017-01-01 00:00:00'
     dt_stop = '2017-12-31 00:00:00'
     dt_intv = 3600
     sst_file = 'sst.nc'
     sst_name = 'sst'
+    dsstdx_file = 'dsstdx.nc'
+    dsstdy_file = 'dsstdy.nc'
+    dsstdx_name = 'dsstdx'
+    dsstdy_name = 'dsstdy'
     ssh_file = 'ssh.nc'
     ssh_name = 'ssh'
+    dsshdx_file = 'dsshdx.nc'
+    dsshdy_file = 'dsshdy.nc'
+    dsshdx_name = 'dsshdx'
+    dsshdy_name = 'dsshdy'
     sss_file = 'sss.nc'
     sss_name = 'sss'
+    dsssdx_file = 'dsssdx.nc'
+    dsssdy_file = 'dsssdy.nc'
+    dsssdx_name = 'dsssdx'
+    dsssdy_name = 'dsssdy'
     qnet_file = 'qnet.nc'
     qnet_name = 'qnet'
     qsw_file = 'qsw.nc'
@@ -89,8 +106,16 @@ contains
     fsw_name = 'fsw'
     temp_file = 'temp.nc'
     temp_name = 'temp'
+    dtempdx_file = 'dtempdx.nc'
+    dtempdy_file = 'dtempdy.nc'
+    dtempdx_name = 'dtempdx'
+    dtempdy_name = 'dtempdy'
     salt_file = 'salt.nc'
     salt_name = 'salt'
+    dsaltdx_file = 'dsaltdx.nc'
+    dsaltdy_file = 'dsaltdy.nc'
+    dsaltdx_name = 'dsaltdx'
+    dsaltdy_name = 'dsaltdy'
 
     LEVEL1 'init_gotm3d'
 
@@ -169,6 +194,9 @@ contains
     npnt = count(depth == 0)
 
     deallocate(t4)
+
+    STDERR npnt,' out of ',nlon,'x',nlat,'=',nlon*nlat,'points' 
+    STDERR nlev,' levels'
   end subroutine init_gotm3d
 
   subroutine time_loop_3d()
@@ -187,66 +215,68 @@ contains
     character(len=1024) :: fn
     integer :: ntime
     integer, dimension(:), allocatable :: time_jul, time_sec
-    REALTYPE, dimension(:,:,:), allocatable :: ssh
-    REALTYPE, dimension(:,:,:,:), allocatable :: temp, salt
-    REALTYPE, dimension(:,:,:), allocatable :: dsshdx, dsshdy
-    REALTYPE, dimension(:,:,:,:), allocatable :: dtempdx, dtempdy, dsaltdx, dsaltdy
-    REALTYPE, dimension(:,:,:), allocatable :: qnet, qsw, taux, tauy, fsw
+    REALTYPE, dimension(:), allocatable :: ssh
+    REALTYPE, dimension(:), allocatable :: qnet, qsw, taux, tauy, fsw
+    REALTYPE, dimension(:,:), allocatable :: temp, salt
+    REALTYPE, dimension(:), allocatable :: dsshdx, dsshdy
+    REALTYPE, dimension(:,:), allocatable :: dtempdx, dtempdy, dsaltdx, dsaltdy
 
     do year = year_st, year_ed
       pyear = year - 1
       nyear = year + 1
 
+      restart = year /= year_st
+
       fn = substitute_file_year(trim(sst_file), year)
       ntime = ncread_timelen(trim(fn))
       allocate(time_jul(ntime+2))
       allocate(time_sec(ntime+2))
-      allocate(ssh(nlon, nlat, ntime+2))
-      allocate(qnet(nlon, nlat, ntime+2))
-      allocate(qsw(nlon, nlat, ntime+2))
-      allocate(taux(nlon, nlat, ntime+2))
-      allocate(tauy(nlon, nlat, ntime+2))
-      allocate(fsw(nlon, nlat, ntime+2))
-      allocate(temp(nlon, nlat, nlev+1, ntime+2))
-      allocate(salt(nlon, nlat, nlev+1, ntime+2))
+      call read_time_year(trim(sst_file), year, ntime, time_jul, time_sec)
 
-      call read_time_year_2d(trim(sst_file), year, ntime, time_jul, time_sec)
-
-      ssh = read_data_year_2d(trim(ssh_file), trim(ssh_name), year, ntime)
-      qnet = read_data_year_2d(trim(qnet_file), trim(qnet_name), year, ntime)
-      qsw = read_data_year_2d(trim(qsw_file), trim(qsw_name), year, ntime)
-      taux = read_data_year_2d(trim(taux_file), trim(taux_name), year, ntime)
-      tauy = read_data_year_2d(trim(tauy_file), trim(tauy_name), year, ntime)
-      fsw = read_data_year_2d(trim(fsw_file), trim(fsw_name), year, ntime)
-      temp(:,:,1,:) = read_data_year_2d(trim(sst_file), trim(sst_name), year, ntime)
-      temp(:,:,2:,:) = read_data_year_3d(trim(temp_file), trim(temp_name), year, ntime)
-      salt(:,:,1,:) = read_data_year_2d(trim(sss_file), trim(sss_name), year, ntime)
-      salt(:,:,2:,:) = read_data_year_3d(trim(salt_file), trim(salt_name), year, ntime)
-
-      allocate(dsshdx(nlon, nlat, ntime+2))
-      allocate(dsshdy(nlon, nlat, ntime+2))
-      allocate(dtempdx(nlon, nlat, nlev+1, ntime+2))
-      allocate(dtempdy(nlon, nlat, nlev+1, ntime+2))
-      allocate(dsaltdx(nlon, nlat, nlev+1, ntime+2))
-      allocate(dsaltdy(nlon, nlat, nlev+1, ntime+2))
-
-      call gradient_2d(nlon, nlat, ntime+2, lon, lat, ssh, dsshdx, dsshdy)
-      call gradient_3d(nlon, nlat, nlev+1, ntime+2, lon, lat, temp, dtempdx, dtempdy)
-      call gradient_3d(nlon, nlat, nlev+1, ntime+2, lon, lat, salt, dsaltdx, dsaltdy)
-
-      restart = year /= year_st
+      allocate(ssh(ntime+2))
+      allocate(qnet(ntime+2))
+      allocate(qsw(ntime+2))
+      allocate(taux(ntime+2))
+      allocate(tauy(ntime+2))
+      allocate(fsw(ntime+2))
+      allocate(temp(nlev+1, ntime+2))
+      allocate(salt(nlev+1, ntime+2))
+      allocate(dsshdx(ntime+2))
+      allocate(dsshdy(ntime+2))
+      allocate(dtempdx(nlev+1, ntime+2))
+      allocate(dtempdy(nlev+1, ntime+2))
+      allocate(dsaltdx(nlev+1, ntime+2))
+      allocate(dsaltdy(nlev+1, ntime+2))
 
       ipnt = 0
       do ilon = 1, nlon
         do ilat = 1, nlat
           if (depth(ilon, ilat) /= 0) then
             ipnt = ipnt + 1
-            call prepare_1d_data(nlev+1,ntime,time_jul,time_sec,(/0.0_8,lev/),ssh(ilon,ilat,:),&
-                                 qnet(ilon,ilat,:),qsw(ilon,ilat,:),taux(ilon,ilat,:),tauy(ilon,ilat,:),fsw(ilon,ilat,:),&
-                                 temp(ilon,ilat,:,:),salt(ilon,ilat,:,:), &
-                                 dsshdx(ilon,ilat,:),dsshdy(ilon,ilat,:), &
-                                 dtempdx(ilon,ilat,:,:),dtempdy(ilon,ilat,:,:), &
-                                 dsaltdx(ilon,ilat,:,:),dsaltdy(ilon,ilat,:,:))
+
+            ssh = read_data_year_ts(trim(ssh_file), trim(ssh_name), ilon, ilat, year, ntime)
+            qnet = read_data_year_ts(trim(qnet_file), trim(qnet_name), ilon, ilat, year, ntime)
+            qsw = read_data_year_ts(trim(qsw_file), trim(qsw_name), ilon, ilat, year, ntime)
+            taux = read_data_year_ts(trim(taux_file), trim(taux_name), ilon, ilat, year, ntime)
+            tauy = read_data_year_ts(trim(tauy_file), trim(tauy_name), ilon, ilat, year, ntime)
+            fsw = read_data_year_ts(trim(fsw_file), trim(fsw_name), ilon, ilat, year, ntime)
+            temp(1,:) = read_data_year_ts(trim(sst_file), trim(sst_name), ilon, ilat, year, ntime)
+            temp(2:,:) = read_data_year_prof_ts(trim(temp_file), trim(temp_name), ilon, ilat, nlev, year, ntime)
+            salt(1,:) = read_data_year_ts(trim(sss_file), trim(sss_name), ilon, ilat, year, ntime)
+            salt(2:,:) = read_data_year_prof_ts(trim(salt_file), trim(salt_name), ilon, ilat, nlev, year, ntime)
+            dsshdx = read_data_year_ts(trim(dsshdx_file), trim(dsshdx_name), ilon, ilat, year, ntime)
+            dsshdy = read_data_year_ts(trim(dsshdy_file), trim(dsshdy_name), ilon, ilat, year, ntime)
+            dtempdx(1,:) = read_data_year_ts(trim(dsstdx_file), trim(dsstdx_name), ilon, ilat, year, ntime)
+            dtempdx(2:,:) = read_data_year_prof_ts(trim(dtempdx_file), trim(dtempdx_name), ilon, ilat, nlev, year, ntime)
+            dtempdy(1,:) = read_data_year_ts(trim(dsstdy_file), trim(dsstdy_name), ilon, ilat, year, ntime)
+            dtempdy(2:,:) = read_data_year_prof_ts(trim(dtempdy_file), trim(dtempdy_name), ilon, ilat, nlev, year, ntime)
+            dsaltdx(1,:) = read_data_year_ts(trim(dsssdx_file), trim(dsssdx_name), ilon, ilat, year, ntime)
+            dsaltdx(2:,:) = read_data_year_prof_ts(trim(dsaltdx_file), trim(dsaltdx_name), ilon, ilat, nlev, year, ntime)
+            dsaltdy(1,:) = read_data_year_ts(trim(dsssdy_file), trim(dsssdy_name), ilon, ilat, year, ntime)
+            dsaltdy(2:,:) = read_data_year_prof_ts(trim(dsaltdy_file), trim(dsaltdy_name), ilon, ilat, nlev, year, ntime)
+
+            call prepare_1d_data(nlev+1,ntime,time_jul,time_sec,(/0.0_8,lev/),ssh,qnet,qsw,taux,tauy,fsw,&
+                                 temp,salt,dsshdx,dsshdy,dtempdx,dtempdy,dsaltdx,dsaltdy)
             call prepare_1d_yaml(ilon,ilat,ipnt,restart)
             call gotm1d()
           endif
@@ -263,109 +293,7 @@ contains
     enddo
   end subroutine time_loop_3d_year
 
-  subroutine gradient_2d(nlon, nlat, ntime, lon, lat, data, ddx, ddy)
-    integer, intent(in) :: nlon, nlat, ntime
-    REALTYPE, dimension(nlon), intent(in) :: lon
-    REALTYPE, dimension(nlat), intent(in) :: lat
-    REALTYPE, dimension(nlon, nlat, ntime), intent(in) :: data
-    REALTYPE, dimension(nlon, nlat, ntime), intent(out) :: ddx, ddy
-
-    integer :: ilon, ilat, itime
-    REALTYPE :: backward, forward
-    logical :: prevmissing, nextmissing
-    REALTYPE, dimension(nlat) :: deg2m_x
-
-    do itime = 1, ntime
-      do ilon = 1, nlon
-        do ilat = 1, nlat
-          if (data(ilon, ilat, itime) == missing) then
-            ddx(ilon, ilat, itime) = missing
-            ddy(ilon, ilat, itime) = missing
-            continue
-          endif
-
-          if (ilon == 1) then
-            prevmissing = .true.
-            nextmissing = data(ilon+1, ilat, itime) == missing
-            forward = (data(ilon+1, ilat, itime) - data(ilon, ilat, itime)) / (lon(ilon+1) - lon(ilon))
-          elseif (ilon == nlon) then
-            prevmissing = data(ilon-1, ilat, itime) == missing
-            nextmissing = .true.
-            backward = (data(ilon, ilat, itime) - data(ilon-1, ilat, itime)) / (lon(ilon) - lon(ilon-1))
-          else
-            prevmissing = data(ilon-1, ilat, itime) == missing
-            nextmissing = data(ilon+1, ilat, itime) == missing
-            forward = (data(ilon+1, ilat, itime) - data(ilon, ilat, itime)) / (lon(ilon+1) - lon(ilon))
-            backward = (data(ilon, ilat, itime) - data(ilon-1, ilat, itime)) / (lon(ilon) - lon(ilon-1))
-          endif
-          if (prevmissing) then
-            if (nextmissing) then
-              ddx(ilon, ilat, itime) = missing
-            else
-              ddx(ilon, ilat, itime) = forward
-            endif
-          else
-            if (nextmissing) then
-              ddx(ilon, ilat, itime) = backward
-            else
-              ddx(ilon, ilat, itime) = (forward + backward) / 2
-            endif
-          endif
-
-          if (ilat == 1) then
-            prevmissing = .true.
-            nextmissing = data(ilon, ilat+1, itime) == missing
-            forward = (data(ilon, ilat+1, itime) - data(ilon, ilat, itime)) / (lat(ilat+1) - lat(ilat))
-          elseif (ilat == nlat) then
-            prevmissing = data(ilon, ilat-1, itime) == missing
-            nextmissing = .true.
-            backward = (data(ilon, ilat, itime) - data(ilon, ilat-1, itime)) / (lat(ilat) - lat(ilat-1))
-          else
-            prevmissing = data(ilon, ilat-1, itime) == missing
-            nextmissing = data(ilon, ilat+1, itime) == missing
-            forward = (data(ilon, ilat+1, itime) - data(ilon, ilat, itime)) / (lat(ilat+1) - lat(ilat))
-            backward = (data(ilon, ilat, itime) - data(ilon, ilat-1, itime)) / (lat(ilat) - lat(ilat-1))
-          endif
-          if (prevmissing) then
-            if (nextmissing) then
-              ddy(ilon, ilat, itime) = missing
-            else
-              ddy(ilon, ilat, itime) = forward
-            endif
-          else
-            if (nextmissing) then
-              ddy(ilon, ilat, itime) = backward
-            else
-              ddy(ilon, ilat, itime) = (forward + backward) / 2
-            endif
-          endif
-        enddo
-      enddo
-    enddo
-
-    deg2m_x = deg2m * cos(lat * deg2rad);
-    ddx = ddx / spread(spread(deg2m_x, 1, nlon), 3, ntime)
-    ddy = ddy / deg2m
-  end subroutine gradient_2d
-
-  subroutine gradient_3d(nlon, nlat, nlev, ntime, lon, lat, data, ddx, ddy)
-    integer, intent(in) :: nlon, nlat, nlev, ntime
-    REALTYPE, dimension(nlon), intent(in) :: lon
-    REALTYPE, dimension(nlat), intent(in) :: lat
-    REALTYPE, dimension(nlon, nlat, nlev, ntime), intent(in) :: data
-    REALTYPE, dimension(nlon, nlat, nlev, ntime), intent(out) :: ddx, ddy
-
-    integer :: ilev
-    REALTYPE, dimension(nlon, nlat, ntime) :: ddx2, ddy2
-
-    do ilev = 1, nlev
-      call gradient_2d(nlon, nlat, ntime, lon, lat, data, ddx2, ddy2)
-      ddx(:, :, ilev, :) = ddx2
-      ddy(:, :, ilev, :) = ddy2
-    enddo
-  end subroutine gradient_3d
-
-  subroutine read_time_year_2d(fn, year, ntime, jul, sec)
+  subroutine read_time_year(fn, year, ntime, jul, sec)
     character(len=*), intent(in) :: fn
     integer, intent(in) :: year, ntime
     integer, dimension(ntime+2), intent(out) :: jul, sec
@@ -381,43 +309,43 @@ contains
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
     call ncread_time(trim(fn1), ntime_n, 1, jul(ntime+2), sec(ntime+2))
-  end subroutine read_time_year_2d
+  end subroutine read_time_year
 
-  function read_data_year_2d(fn, varn, year, ntime) result(data)
+  function read_data_year_ts(fn, varn, ilon, ilat, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
-    integer, intent(in) :: year, ntime
-    REALTYPE, dimension(nlon, nlat, ntime+2) :: data
+    integer, intent(in) :: ilon, ilat, year, ntime
+    REALTYPE, dimension(ntime+2) :: data
 
     character(len=1024) :: fn1
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    data(:, :, 2:ntime+1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime, ntime)
+    data(2:ntime+1) = ncread_ts(trim(fn1), trim(varn), ilon, ilat, ntime, ntime)
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    data(:, :, 1:1) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_p, 1, "last")
+    data(1:1) = ncread_ts(trim(fn1), trim(varn), ilon, ilat, ntime_p, 1, "last")
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    data(:, :, ntime+2:ntime+2) = ncread_surface(trim(fn1), trim(varn), nlon, nlat, ntime_n, 1)
-  end function read_data_year_2d
+    data(ntime+2:ntime+2) = ncread_ts(trim(fn1), trim(varn), ilon, ilat, ntime_n, 1)
+  end function read_data_year_ts
 
-  function read_data_year_3d(fn, varn, year, ntime) result(data)
+  function read_data_year_prof_ts(fn, varn, ilon, ilat, nlev, year, ntime) result(data)
     character(len=*), intent(in) :: fn, varn
-    integer, intent(in) :: year, ntime
-    REALTYPE, dimension(nlon, nlat, nlev, ntime+2) :: data
+    integer, intent(in) :: ilon, ilat, nlev, year, ntime
+    REALTYPE, dimension(nlev, ntime+2) :: data
 
     character(len=1024) :: fn1
     integer :: ntime_p, ntime_n
 
     fn1 = substitute_file_year(trim(fn), year)
-    data(:, :, :, 2:ntime+1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime, ntime)
+    data(:, 2:ntime+1) = ncread_prof_ts(trim(fn1), trim(varn), ilon, ilat, nlev, ntime, ntime)
     fn1 = substitute_file_year(trim(fn), year-1)
     ntime_p = ncread_timelen(trim(fn1))
-    data(:, :, :, 1:1) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_p, 1, 'last')
+    data(:, 1:1) = ncread_prof_ts(trim(fn1), trim(varn), ilon, ilat, nlev, ntime_p, 1, 'last')
     fn1 = substitute_file_year(trim(fn), year+1)
     ntime_n = ncread_timelen(trim(fn1))
-    data(:, :, :, ntime+2:ntime+2) = ncread_subsurface(trim(fn1), trim(varn), nlon, nlat, nlev, ntime_n, 1)
-  end function read_data_year_3d
+    data(:, ntime+2:ntime+2) = ncread_prof_ts(trim(fn1), trim(varn), ilon, ilat, nlev, ntime_n, 1)
+  end function read_data_year_prof_ts
 
   function substitute_file_year(file, year) result(newfile)
     character(len=*), intent(in) :: file
